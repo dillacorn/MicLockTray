@@ -132,7 +132,8 @@ namespace MicLockTray
         {
             _icon = new NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
+                // Use the EXE’s embedded application icon (set via .csproj)
+                Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? System.Drawing.SystemIcons.Application,
                 Text = $"MicLockTray: target {Settings.TargetPercent}%",
                 Visible = true,
                 ContextMenuStrip = new ContextMenuStrip()
