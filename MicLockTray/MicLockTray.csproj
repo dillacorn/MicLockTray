@@ -11,11 +11,11 @@
     <PlatformTarget>x64</PlatformTarget>
 
     <!-- Point to your icon file. Put the .ico next to the .csproj or adjust the path. -->
-    <ApplicationIcon>Iconarchive-Blue-Election-Election-Mic.ico</ApplicationIcon>
+    <ApplicationIcon>Elegantthemes-Beautiful-Flat-Mic.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Ensure the file is included in the project (build-time only; not copied at runtime). -->
-    <Content Include="Iconarchive-Blue-Election-Election-Mic.ico" />
+    <Content Include="Elegantthemes-Beautiful-Flat-Mic.ico" />
   </ItemGroup>
 </Project>
