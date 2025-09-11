@@ -14,3 +14,8 @@ Windows tray app that keeps your microphone input volume fixed at a user-chosen 
 - Lightweight single EXE. No dependencies. No telemetry. No log files.
 - Uses Windows Core Audio APIs (`IAudioEndpointVolume`).
 - [NirCmd](https://www.nirsoft.net/utils/nircmd.html) NOT required — this is a standalone application developed by me!
+
+---
+
+## Icon Credit
+Icon: **“Audio input microphone Icon”** by [Papirus Dev Team](https://www.iconarchive.com/artist/papirus-team.html) on [iconarchive.com](https://www.iconarchive.com/show/papirus-devices-icons-by-papirus-team/audio-input-microphone-icon.html)
