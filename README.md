@@ -23,4 +23,4 @@ Icon: **“Audio input microphone Icon”** by [Papirus Dev Team](https://www.ic
 ---
 
 Want to lock your audio output volume instead?
-Check out [VolLockTray](https://github.com/dillacorn/VolLockTray)
+- Check out [VolLockTray](https://github.com/dillacorn/VolLockTray)
