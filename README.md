@@ -19,3 +19,8 @@ Windows tray app that keeps your microphone input volume fixed at a user-chosen 
 
 ## Icon Credit
 Icon: **“Audio input microphone Icon”** by [Papirus Dev Team](https://www.iconarchive.com/artist/papirus-team.html) on [iconarchive.com](https://www.iconarchive.com/show/papirus-devices-icons-by-papirus-team/audio-input-microphone-icon.html)
+
+---
+
+Want to lock your audio output volume instead?
+Check out [VolLockTray](https://github.com/dillacorn/VolLockTray)
