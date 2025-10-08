@@ -1,0 +1,17 @@
+name: Anti-Spam PR Labeler
+
+on: [pull_request]
+
+jobs:
+  label-spam-prs:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Label Potential Spam PRs
+      uses: PraiseXI/AntiSpamPRLabeler@v1.2.0
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        max-changes-for-label: '2' # Flag PRs with 2 or fewer changes
+        label-message: 'This PR has been flagged for review due to minimal changes. Please ensure your contribution adds meaningful value.'
