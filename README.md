@@ -22,5 +22,10 @@ Icon: **“Audio input microphone Icon”** by [Papirus Dev Team](https://www.ic
 
 ---
 
+Need a Mic Lock Linux 🐧 solution?
+- Check out my script [miclock.sh](https://github.com/dillacorn/arch-hypr-dots/blob/main/config/hypr/scripts/miclock.sh)
+
+---
+
 Want to lock your audio output volume instead?
 - Check out [VolLockTray](https://github.com/dillacorn/VolLockTray)
