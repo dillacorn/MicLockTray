@@ -19,7 +19,7 @@ namespace MicLockTray
     internal static class Program
     {
         [STAThread]
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             using var mutex = new Mutex(true, $@"Local\MicLockTray-{Environment.UserName}", out bool createdNew);
             if (!createdNew) return;
@@ -39,133 +39,130 @@ namespace MicLockTray
     {
         private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string RunValueName = "MicLockTray";
+        private static string ExePath => Application.ExecutablePath;
+
+        public static bool IsInstalled()
+        {
+            using var rk = Registry.CurrentUser.OpenSubKey(RunKeyPath, false);
+            var val = rk?.GetValue(RunValueName) as string;
+            return !string.IsNullOrWhiteSpace(val);
+        }
 
         public static void Install()
         {
+            using var rk = Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
+            var cmd = $"\"{ExePath}\" --hidden";
+            rk.SetValue(RunValueName, cmd, RegistryValueKind.String);
+            MessageBox.Show("Autorun installed.", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
             try
             {
-                using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true) ??
-                                Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true);
-
-                if (key == null) return;
-                var exe = Application.ExecutablePath;
-                key.SetValue(RunValueName, $"\"{exe}\"", RegistryValueKind.String);
-                MessageBox.Show("Autorun installed.", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                var psi = new ProcessStartInfo(ExePath, "--hidden")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                Process.Start(psi);
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to install autorun:\n{ex.Message}", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch { }
         }
 
         public static void Uninstall()
         {
-            try
-            {
-                using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
-                key?.DeleteValue(RunValueName, throwOnMissingValue: false);
-                MessageBox.Show("Autorun removed.", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to remove autorun:\n{ex.Message}", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        public static bool IsInstalled()
-        {
-            try
-            {
-                using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
-                var v = key?.GetValue(RunValueName) as string;
-                return !string.IsNullOrWhiteSpace(v);
-            }
-            catch { return false; }
+            using var rk = Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
+            rk.DeleteValue(RunValueName, false);
+            MessageBox.Show("Autorun removed.", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 
     internal static class Settings
     {
-        private static readonly string Dir =
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MicLockTray");
-        private static readonly string PathJson = System.IO.Path.Combine(Dir, "settings.json");
+        private static readonly string Dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "MicLockTray"
+        );
 
-        public static int TargetPercent { get; set; } = 65;
-        public static bool Enabled { get; set; } = true;
+        private static readonly string File = Path.Combine(Dir, "config.json");
+
+        public static int TargetPercent { get; private set; } = 100; // 1–100
 
         public static void Load()
         {
             try
             {
-                if (!File.Exists(PathJson)) return;
-                var json = File.ReadAllText(PathJson);
-                var dto = JsonSerializer.Deserialize<SettingsDto>(json);
-                if (dto == null) return;
-
-                TargetPercent = Clamp(dto.TargetPercent, 1, 100);
-                Enabled = dto.Enabled;
+                if (!System.IO.File.Exists(File)) return;
+                var json = System.IO.File.ReadAllText(File);
+                var dto = JsonSerializer.Deserialize<ConfigDto>(json);
+                if (dto != null) SetTarget(dto.target_percent);
             }
             catch { }
         }
 
-        public static void Save()
+        public static void SetTarget(int percent)
+        {
+            if (percent < 1) percent = 1;
+            if (percent > 100) percent = 100;
+            TargetPercent = percent;
+            Save();
+        }
+
+        private static void Save()
         {
             try
             {
                 Directory.CreateDirectory(Dir);
-                var dto = new SettingsDto
-                {
-                    TargetPercent = Clamp(TargetPercent, 1, 100),
-                    Enabled = Enabled
-                };
+                var dto = new ConfigDto { target_percent = TargetPercent };
                 var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(PathJson, json);
+                System.IO.File.WriteAllText(File, json);
             }
             catch { }
         }
 
-        private static int Clamp(int v, int lo, int hi)
-        {
-            if (v < lo) return lo;
-            if (v > hi) return hi;
-            return v;
-        }
-
-        private sealed class SettingsDto
-        {
-            public int TargetPercent { get; set; } = 65;
-            public bool Enabled { get; set; } = true;
-        }
+        private sealed class ConfigDto { public int target_percent { get; set; } = 100; }
     }
 
     internal sealed class TrayApp : ApplicationContext
     {
-        private readonly NotifyIcon _icon = new();
+        // If this .ico exists next to the exe, we use it for the tray icon.
+        // Fallback: exe embedded icon, then SystemIcons.Application.
+        private const string IconFileName = "Papirus-Team-Papirus-Devices-Audio-input-microphone.ico";
+
+        private readonly NotifyIcon _icon;
+        private readonly System.Drawing.Icon _trayIcon;
+
         private readonly ToolStripMenuItem _miToggle;
-        private readonly ToolStripMenuItem _miSetTarget;
         private readonly ToolStripMenuItem _miInstall;
         private readonly ToolStripMenuItem _miUninstall;
+        private readonly ToolStripMenuItem _miSetTarget;
 
         private readonly MicEnforcer _enforcer;
 
+        // very light periodic working-set trim to reduce visible memory creep under stress
         private readonly System.Windows.Forms.Timer _trimTimer = new() { Interval = 60_000 };
+
+        private bool _cleanedUp;
 
         public TrayApp()
         {
-            _icon.Text = "MicLockTray";
-            _icon.Icon = System.Drawing.SystemIcons.Information;
-            _icon.Visible = true;
+            _trayIcon = LoadTrayIcon();
 
-            _icon.ContextMenuStrip = new ContextMenuStrip();
+            _icon = new NotifyIcon
+            {
+                Icon = _trayIcon,
+                Text = $"MicLockTray: target {Settings.TargetPercent}%",
+                Visible = true,
+                ContextMenuStrip = new ContextMenuStrip()
+            };
 
-            _miToggle = new ToolStripMenuItem(Settings.Enabled ? "Pause enforcement" : "Resume enforcement");
-            _miSetTarget = new ToolStripMenuItem($"Set target volume… ({Settings.TargetPercent}%)");
-            _miInstall = new ToolStripMenuItem("Install autorun");
-            _miUninstall = new ToolStripMenuItem("Remove autorun");
-
-            _icon.ContextMenuStrip.Items.Add(_miToggle);
+            _miToggle = new ToolStripMenuItem("Pause enforcement");
+            _miSetTarget = new ToolStripMenuItem("Set target volume…");
+            _icon.ContextMenuStrip!.Items.Add(_miToggle);
             _icon.ContextMenuStrip.Items.Add(_miSetTarget);
             _icon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
+
+            _miInstall = new ToolStripMenuItem("Install autorun") { Enabled = !Installer.IsInstalled() };
+            _miUninstall = new ToolStripMenuItem("Remove autorun") { Enabled = Installer.IsInstalled() };
             _icon.ContextMenuStrip.Items.Add(_miInstall);
             _icon.ContextMenuStrip.Items.Add(_miUninstall);
             _icon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
@@ -183,22 +180,36 @@ namespace MicLockTray
             _miUninstall.Click += (_, _) => { Installer.Uninstall(); RefreshInstallMenu(); };
             miExit.Click += (_, _) => ExitThreadCore();
 
-            RefreshInstallMenu();
-
+            // start periodic trim (cheap; no allocations)
             _trimTimer.Tick += (_, _) => MemoryTrimmer.Trim();
             _trimTimer.Start();
 
-            Application.ApplicationExit += (_, _) =>
+            try { _icon.ShowBalloonTip(1200, "MicLockTray", $"Microphone volume locked to {Settings.TargetPercent}%.", ToolTipIcon.Info); } catch { }
+
+            Application.ApplicationExit += (_, _) => Cleanup();
+        }
+
+        private static System.Drawing.Icon LoadTrayIcon()
+        {
+            try
             {
-                try
-                {
-                    _icon.Visible = false;
-                    _icon.Dispose();
-                    _enforcer.Dispose();
-                    _trimTimer.Stop();
-                }
-                catch { }
-            };
+                var exePath = Application.ExecutablePath;
+                var exeDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
+
+                // Prefer base directory for single-file publishes; also check exe directory.
+                var p1 = Path.Combine(AppContext.BaseDirectory, IconFileName);
+                var p2 = Path.Combine(exeDir, IconFileName);
+
+                if (System.IO.File.Exists(p1)) return new System.Drawing.Icon(p1);
+                if (System.IO.File.Exists(p2)) return new System.Drawing.Icon(p2);
+
+                return System.Drawing.Icon.ExtractAssociatedIcon(exePath) ?? System.Drawing.SystemIcons.Application;
+            }
+            catch
+            {
+                try { return System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? System.Drawing.SystemIcons.Application; }
+                catch { return System.Drawing.SystemIcons.Application; }
+            }
         }
 
         private void RefreshInstallMenu()
@@ -221,31 +232,39 @@ namespace MicLockTray
                 _enforcer.Enable();
                 _enforcer.ForceToTarget();
                 _miToggle.Text = "Pause enforcement";
-                try { _icon.ShowBalloonTip(800, "MicLockTray", "Resumed.", ToolTipIcon.None); } catch { }
+                try { _icon.ShowBalloonTip(800, "MicLockTray", $"Resumed. Locking at {Settings.TargetPercent}% on change.", ToolTipIcon.Info); } catch { }
             }
-
-            Settings.Enabled = _enforcer.IsEnabled;
-            Settings.Save();
         }
 
         private void PromptAndSetTarget()
         {
             using var dlg = new VolumePrompt(Settings.TargetPercent);
-            if (dlg.ShowDialog() != DialogResult.OK) return;
+            if (dlg.ShowDialog() == DialogResult.OK)
+            {
+                Settings.SetTarget(dlg.Value);
+                _icon.Text = $"MicLockTray: target {Settings.TargetPercent}%";
+                _enforcer.ForceToTarget();
+                try { _icon.ShowBalloonTip(900, "MicLockTray", $"Target set to {Settings.TargetPercent}%.", ToolTipIcon.Info); } catch { }
+            }
+        }
 
-            int v = dlg.Value;
-            Settings.TargetPercent = v;
-            Settings.Save();
+        private void Cleanup()
+        {
+            if (_cleanedUp) return;
+            _cleanedUp = true;
 
-            _miSetTarget.Text = $"Set target volume… ({Settings.TargetPercent}%)";
-            _enforcer.ForceToTarget();
+            try { _trimTimer.Stop(); } catch { }
+            try { _enforcer.Dispose(); } catch { }
+
+            try { _icon.Visible = false; } catch { }
+            try { _icon.Dispose(); } catch { }
+
+            try { _trayIcon.Dispose(); } catch { }
         }
 
         protected override void ExitThreadCore()
         {
-            try { _enforcer.Dispose(); } catch { }
-            try { _trimTimer.Stop(); } catch { }
-            try { _icon.Visible = false; _icon.Dispose(); } catch { }
+            Cleanup();
             base.ExitThreadCore();
         }
     }
@@ -267,18 +286,17 @@ namespace MicLockTray
             MaximizeBox = false;
             ShowInTaskbar = false;
 
-            // DPI/text-scaling safe layout (no hard-coded pixel positioning).
+            // DPI-safe: let WinForms scale and size to content.
             AutoScaleMode = AutoScaleMode.Font;
-            Padding = new Padding(12);
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Padding = new Padding(12);
 
             var lbl = new Label
             {
                 Text = "Volume (1–100):",
                 AutoSize = true,
-                Anchor = AnchorStyles.Left,
-                Margin = new Padding(0, 0, 12, 0)
+                Anchor = AnchorStyles.Left
             };
 
             _num = new NumericUpDown
@@ -286,66 +304,67 @@ namespace MicLockTray
                 Minimum = 1,
                 Maximum = 100,
                 Value = Math.Min(100, Math.Max(1, current)),
-                Width = 110,
                 Anchor = AnchorStyles.Left,
-                Margin = new Padding(0)
+                Width = 110
             };
 
             _ok = new Button
             {
                 Text = "OK",
                 DialogResult = DialogResult.OK,
-                AutoSize = true,
-                MinimumSize = new System.Drawing.Size(80, 0),
-                Margin = new Padding(0)
+                AutoSize = true
             };
 
             _cancel = new Button
             {
                 Text = "Cancel",
                 DialogResult = DialogResult.Cancel,
-                AutoSize = true,
-                MinimumSize = new System.Drawing.Size(80, 0),
-                Margin = new Padding(12, 0, 0, 0)
+                AutoSize = true
             };
 
             var buttons = new FlowLayoutPanel
             {
                 FlowDirection = FlowDirection.RightToLeft,
                 AutoSize = true,
+                Dock = DockStyle.Fill,
                 WrapContents = false,
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 12, 0, 0)
+                Padding = new Padding(0, 8, 0, 0)
             };
-
-            // RightToLeft flow: add OK first so it ends up on the far right.
-            buttons.Controls.Add(_ok);
             buttons.Controls.Add(_cancel);
+            buttons.Controls.Add(_ok);
 
-            var layout = new TableLayoutPanel
+            var grid = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill,
                 AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 2,
-                Margin = new Padding(0),
-                Padding = new Padding(0)
+                RowCount = 2
             };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            layout.Controls.Add(lbl, 0, 0);
-            layout.Controls.Add(_num, 1, 0);
-            layout.Controls.Add(buttons, 0, 1);
-            layout.SetColumnSpan(buttons, 2);
+            grid.Controls.Add(lbl, 0, 0);
+            grid.Controls.Add(_num, 1, 0);
 
-            Controls.Add(layout);
+            grid.Controls.Add(buttons, 0, 1);
+            grid.SetColumnSpan(buttons, 2);
+
+            Controls.Add(grid);
 
             AcceptButton = _ok;
             CancelButton = _cancel;
+
+            Shown += (_, _) =>
+            {
+                try
+                {
+                    _num.Focus();
+                    _num.Select(0, _num.Text.Length);
+                }
+                catch { }
+            };
         }
     }
 
@@ -365,202 +384,56 @@ namespace MicLockTray
         }
     }
 
-    internal sealed class MicEnforcer : IDisposable
-    {
-        private readonly Func<float> _targetScalar;
-        private bool _enabled;
-
-        private CoreAudio.IMMDeviceEnumerator? _enumerator;
-        private CoreAudio.IMMDevice? _device;
-        private CoreAudio.IAudioEndpointVolume? _endpoint;
-        private VolumeCallback? _callback;
-
-        public bool IsEnabled => _enabled;
-
-        public MicEnforcer(Func<float> targetScalar)
-        {
-            _targetScalar = targetScalar;
-        }
-
-        public void Enable()
-        {
-            if (_enabled) return;
-            _enabled = true;
-
-            Bind();
-        }
-
-        public void Disable()
-        {
-            if (!_enabled) return;
-            _enabled = false;
-
-            Unbind();
-        }
-
-        public void ForceToTarget()
-        {
-            try
-            {
-                if (!_enabled) return;
-                var ep = _endpoint;
-                if (ep == null) return;
-
-                float s = Clamp01(_targetScalar());
-                _ = ep.SetMasterVolumeLevelScalar(s, Guid.Empty);
-            }
-            catch { }
-        }
-
-        private void Bind()
-        {
-            try
-            {
-                _enumerator = (CoreAudio.IMMDeviceEnumerator)new CoreAudio.MMDeviceEnumerator();
-
-                _ = _enumerator.GetDefaultAudioEndpoint(CoreAudio.EDataFlow.eCapture, CoreAudio.ERole.eCommunications, out _device);
-
-                var iid = typeof(CoreAudio.IAudioEndpointVolume).GUID;
-                _ = _device.Activate(ref iid, 0, IntPtr.Zero, out object obj);
-                _endpoint = (CoreAudio.IAudioEndpointVolume)obj;
-
-                _callback = new VolumeCallback(this);
-                _ = _endpoint.RegisterControlChangeNotify(_callback);
-            }
-            catch
-            {
-                Unbind();
-            }
-        }
-
-        private void Unbind()
-        {
-            try
-            {
-                if (_endpoint != null && _callback != null)
-                {
-                    try { _ = _endpoint.UnregisterControlChangeNotify(_callback); } catch { }
-                }
-            }
-            catch { }
-
-            try { if (_endpoint != null) Marshal.ReleaseComObject(_endpoint); } catch { }
-            try { if (_device != null) Marshal.ReleaseComObject(_device); } catch { }
-            try { if (_enumerator != null) Marshal.ReleaseComObject(_enumerator); } catch { }
-
-            _endpoint = null;
-            _device = null;
-            _enumerator = null;
-            _callback = null;
-        }
-
-        public void Dispose()
-        {
-            Unbind();
-        }
-
-        private void OnNotify(float newScalar)
-        {
-            if (!_enabled) return;
-
-            float target = Clamp01(_targetScalar());
-
-            // deadband to avoid chatter
-            if (Math.Abs(newScalar - target) < 0.005f) return;
-
-            try { _ = _endpoint?.SetMasterVolumeLevelScalar(target, Guid.Empty); } catch { }
-        }
-
-        private static float Clamp01(float v)
-        {
-            if (v < 0f) return 0f;
-            if (v > 1f) return 1f;
-            return v;
-        }
-
-        private sealed class VolumeCallback : CoreAudio.IAudioEndpointVolumeCallback
-        {
-            private readonly MicEnforcer _p;
-            public VolumeCallback(MicEnforcer p) => _p = p;
-
-            public void OnNotify(IntPtr pNotify)
-            {
-                try
-                {
-                    var data = Marshal.PtrToStructure<CoreAudio.AUDIO_VOLUME_NOTIFICATION_DATA>(pNotify);
-                    _p.OnNotify(data.fMasterVolume);
-                }
-                catch { }
-            }
-        }
-    }
+    // -------- CoreAudio interop + event-driven enforcer --------
 
     internal static class CoreAudio
     {
-        internal enum EDataFlow
-        {
-            eRender = 0,
-            eCapture = 1,
-            eAll = 2
-        }
+        public enum EDataFlow : int { eRender = 0, eCapture = 1, eAll = 2 }
+        public enum ERole : int { eConsole = 0, eMultimedia = 1, eCommunications = 2 }
 
-        internal enum ERole
+        [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IMMDeviceEnumerator
         {
-            eConsole = 0,
-            eMultimedia = 1,
-            eCommunications = 2
-        }
-
-        [ComImport]
-        [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-        internal class MMDeviceEnumerator
-        {
-        }
-
-        [ComImport]
-        [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        internal interface IMMDeviceEnumerator
-        {
-            [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, int dwStateMask, out object ppDevices);
+            [PreserveSig] int EnumAudioEndpoints(EDataFlow dataFlow, int dwStateMask, out IMMDeviceCollection ppDevices);
             [PreserveSig] int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice ppDevice);
             [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string pwstrId, out IMMDevice ppDevice);
-            [PreserveSig] int RegisterEndpointNotificationCallback(IntPtr pClient);
-            [PreserveSig] int UnregisterEndpointNotificationCallback(IntPtr pClient);
+            [PreserveSig] int RegisterEndpointNotificationCallback([MarshalAs(UnmanagedType.Interface)] IMMNotificationClient pClient);
+            [PreserveSig] int UnregisterEndpointNotificationCallback([MarshalAs(UnmanagedType.Interface)] IMMNotificationClient pClient);
         }
 
-        [ComImport]
-        [Guid("D666063F-1587-4E43-81F1-B948E807363F")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        internal interface IMMDevice
+        [ComImport, Guid("7991EEC9-7E89-4D85-8390-6C703CEC60C0"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IMMNotificationClient
         {
-            [PreserveSig] int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-            [PreserveSig] int OpenPropertyStore(int stgmAccess, out object ppProperties);
-            [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);
-            [PreserveSig] int GetState(out int pdwState);
+            void OnDeviceStateChanged([MarshalAs(UnmanagedType.LPWStr)] string pwstrDeviceId, uint dwNewState);
+            void OnDeviceAdded([MarshalAs(UnmanagedType.LPWStr)] string pwstrDeviceId);
+            void OnDeviceRemoved([MarshalAs(UnmanagedType.LPWStr)] string pwstrDeviceId);
+            void OnDefaultDeviceChanged(EDataFlow flow, ERole role, [MarshalAs(UnmanagedType.LPWStr)] string pwstrDefaultDeviceId);
+            void OnPropertyValueChanged([MarshalAs(UnmanagedType.LPWStr)] string pwstrDeviceId, PROPERTYKEY key);
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        internal struct AUDIO_VOLUME_NOTIFICATION_DATA
+        public struct PROPERTYKEY { public Guid fmtid; public uint pid; }
+
+        [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-C0F926C399A4"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IMMDeviceCollection
         {
-            public Guid guidEventContext;
-            [MarshalAs(UnmanagedType.Bool)]
-            public bool bMuted;
-            public float fMasterVolume;
-            public uint nChannels;
+            [PreserveSig] int GetCount(out uint pcDevices);
+            [PreserveSig] int Item(uint nDevice, out IMMDevice ppDevice);
         }
 
-        [ComImport]
-        [Guid("657804FA-D6AD-4496-8A60-352752AF4F89")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        internal interface IAudioEndpointVolumeCallback
+        [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+        public class MMDeviceEnumerator { }
+
+        [ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IMMDevice
         {
-            void OnNotify(IntPtr pNotify);
+            [PreserveSig] int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+            [PreserveSig] int OpenPropertyStore(int stgmAccess, out IntPtr ppProperties);
+            [PreserveSig] int GetId(out IntPtr ppstrId);
+            [PreserveSig] int GetState(out int pdwState);
         }
 
-        [ComImport]
-        [Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         public interface IAudioEndpointVolume
         {
             [PreserveSig] int RegisterControlChangeNotify([MarshalAs(UnmanagedType.Interface)] IAudioEndpointVolumeCallback pNotify);
@@ -573,14 +446,178 @@ namespace MicLockTray
             [PreserveSig] int SetChannelVolumeLevel(uint nChannel, float fLevelDB, Guid pguidEventContext);
             [PreserveSig] int SetChannelVolumeLevelScalar(uint nChannel, float fLevel, Guid pguidEventContext);
             [PreserveSig] int GetChannelVolumeLevel(uint nChannel, out float pfLevelDB);
-            [PreserveSig] int GetChannelVolumeLevelScalar(uint nChannel, out float pfLevel);
+            [PreserveSig] int GetChannelVolumeLevelScalar(out float pfLevel);
             [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, Guid pguidEventContext);
             [PreserveSig] int GetMute(out bool pbMute);
             [PreserveSig] int GetVolumeStepInfo(out uint pnStep, out uint pnStepCount);
             [PreserveSig] int VolumeStepUp(Guid pguidEventContext);
             [PreserveSig] int VolumeStepDown(Guid pguidEventContext);
             [PreserveSig] int QueryHardwareSupport(out uint pdwHardwareSupportMask);
-            [PreserveSig] int GetVolumeRange(out float pflVolumeMindB, out float pflVolumeMaxdB, out float pflVolumeIncrementdB);
+            [PreserveSig] int GetVolumeRange(out float mindB, out float maxdB, out float incrementdB);
+        }
+    }
+
+    [ComImport, Guid("657804FA-D6AD-4496-8A60-352752AF4F89"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioEndpointVolumeCallback
+    {
+        [PreserveSig] int OnNotify(IntPtr pNotify);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct AUDIO_VOLUME_NOTIFICATION_DATA
+    {
+        public Guid guidEventContext;
+        [MarshalAs(UnmanagedType.Bool)] public bool bMuted;
+        public float fMasterVolume;
+        public uint nChannels;
+        public IntPtr afChannelVolumes; // float*
+    }
+
+    internal sealed class MicEnforcer : IDisposable
+    {
+        private sealed class Binding
+        {
+            public CoreAudio.IAudioEndpointVolume Ep = default!;
+            public VolumeCallback Cb = default!;
+        }
+
+        [ComVisible(true)]
+        private sealed class VolumeCallback : IAudioEndpointVolumeCallback
+        {
+            private readonly CoreAudio.IAudioEndpointVolume _ep;
+            private readonly Func<float> _getTarget;
+            private readonly Guid _ctx;
+
+            public VolumeCallback(CoreAudio.IAudioEndpointVolume ep, Func<float> getTarget, Guid ctx)
+            { _ep = ep; _getTarget = getTarget; _ctx = ctx; }
+
+            public int OnNotify(IntPtr pNotify)
+            {
+                try
+                {
+                    var data = Marshal.PtrToStructure<AUDIO_VOLUME_NOTIFICATION_DATA>(pNotify);
+                    if (data.guidEventContext == _ctx) return 0; // ignore self
+                    float target = Math.Clamp(_getTarget(), 0f, 1f);
+                    if (Math.Abs(data.fMasterVolume - target) > 0.005f)
+                        _ = _ep.SetMasterVolumeLevelScalar(target, _ctx);
+                }
+                catch { }
+                return 0;
+            }
+        }
+
+        [ComVisible(true)]
+        private sealed class NotificationClient : CoreAudio.IMMNotificationClient
+        {
+            private readonly MicEnforcer _owner;
+            public NotificationClient(MicEnforcer owner) { _owner = owner; }
+            public void OnDefaultDeviceChanged(CoreAudio.EDataFlow flow, CoreAudio.ERole role, string id)
+            { if (flow == CoreAudio.EDataFlow.eCapture) { try { _owner.Rebind(role); _owner.ForceToTarget(); } catch { } } }
+            public void OnDeviceStateChanged(string id, uint state) { }
+            public void OnDeviceAdded(string id) { }
+            public void OnDeviceRemoved(string id) { }
+            public void OnPropertyValueChanged(string id, CoreAudio.PROPERTYKEY key) { }
+        }
+
+        private readonly Func<float> _getTargetScalar;
+        private readonly Guid _eventCtx = Guid.NewGuid();
+        private readonly CoreAudio.IMMDeviceEnumerator _enum = (CoreAudio.IMMDeviceEnumerator)new CoreAudio.MMDeviceEnumerator();
+        private readonly NotificationClient _notify;
+        private readonly Dictionary<CoreAudio.ERole, Binding> _bindings = new();
+        private bool _enabled;
+        private bool _disposed;
+
+        public MicEnforcer(Func<float> getTargetScalar)
+        {
+            _getTargetScalar = getTargetScalar;
+            _notify = new NotificationClient(this);
+        }
+
+        public bool IsEnabled => _enabled;
+
+        public void Enable()
+        {
+            if (_enabled) return;
+            try { _ = _enum.RegisterEndpointNotificationCallback(_notify); } catch { }
+            foreach (CoreAudio.ERole role in new[] { CoreAudio.ERole.eConsole, CoreAudio.ERole.eMultimedia, CoreAudio.ERole.eCommunications })
+                Bind(role);
+            _enabled = true;
+        }
+
+        public void Disable()
+        {
+            if (!_enabled) return;
+            foreach (var kv in _bindings)
+            {
+                try { kv.Value.Ep.UnregisterControlChangeNotify(kv.Value.Cb); } catch { }
+                SafeReleaseCom(kv.Value.Ep);
+            }
+            _bindings.Clear();
+            try { _ = _enum.UnregisterEndpointNotificationCallback(_notify); } catch { }
+            _enabled = false;
+        }
+
+        public void ForceToTarget()
+        {
+            float target = Math.Clamp(_getTargetScalar(), 0f, 1f);
+            foreach (var kv in _bindings)
+            {
+                try { _ = kv.Value.Ep.SetMasterVolumeLevelScalar(target, _eventCtx); } catch { }
+            }
+        }
+
+        private void Bind(CoreAudio.ERole role)
+        {
+            if (_bindings.TryGetValue(role, out var old))
+            {
+                try { old.Ep.UnregisterControlChangeNotify(old.Cb); } catch { }
+                SafeReleaseCom(old.Ep);
+                _bindings.Remove(role);
+            }
+
+            CoreAudio.IMMDevice? dev = null;
+            try
+            {
+                int hr = _enum.GetDefaultAudioEndpoint(CoreAudio.EDataFlow.eCapture, role, out dev);
+                if (hr != 0 || dev is null) return;
+
+                Guid iid = new("5CDF2C82-841E-4546-9722-0CF74078229A"); // IAudioEndpointVolume
+                hr = dev.Activate(ref iid, 0x1 /*CLSCTX_INPROC_SERVER*/, IntPtr.Zero, out var obj);
+                if (hr != 0 || obj is null) return;
+
+                var ep = (CoreAudio.IAudioEndpointVolume)obj;
+                var cb = new VolumeCallback(ep, _getTargetScalar, _eventCtx);
+                _ = ep.RegisterControlChangeNotify(cb);
+
+                _bindings[role] = new Binding { Ep = ep, Cb = cb };
+            }
+            catch { }
+            finally
+            {
+                if (dev != null) SafeReleaseCom(dev);
+            }
+        }
+
+        private void Rebind(CoreAudio.ERole role) => Bind(role);
+
+        private static void SafeReleaseCom(object com)
+        {
+            try
+            {
+                if (Marshal.IsComObject(com))
+                {
+                    while (Marshal.ReleaseComObject(com) > 0) { }
+                }
+            }
+            catch { }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            try { Disable(); } catch { }
+            SafeReleaseCom(_enum);
+            _disposed = true;
         }
     }
 }
