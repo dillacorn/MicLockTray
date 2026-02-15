@@ -30,6 +30,9 @@ Need a Mic Lock Linux 🐧 solution?
 Want to lock your audio output volume instead?
 - Check out [VolLockTray](https://github.com/dillacorn/VolLockTray)
 
+## License
+This project is licensed under the [MIT License](https://github.com/dillacorn/MicLockTray/blob/main/LICENSE)
+
 ## ☕ Donate
 
 Built and maintained out of passion. Always FOSS. Donations appreciated.  
