@@ -28,18 +28,24 @@ internal static class Installer
 
     public static void Install()
     {
+        var text = UiText.Current;
+
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
             if (key is null)
-                throw new InvalidOperationException("The current-user autorun registry key could not be opened.");
+                throw new InvalidOperationException(text.AutorunRegistryUnavailable);
 
             key.SetValue(RunValueName, $"\"{ExePath}\" --hidden", RegistryValueKind.String);
-            MessageBox.Show("Autorun installed.", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(text.AutorunInstalled, text.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to install autorun:\n{ex.Message}", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(
+                UiText.Format(text.AutorunInstallFailedFormat, ex.Message),
+                text.AppName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             return;
         }
 
@@ -62,18 +68,24 @@ internal static class Installer
 
     public static void Uninstall()
     {
+        var text = UiText.Current;
+
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, true);
             if (key is null)
-                throw new InvalidOperationException("The current-user autorun registry key could not be opened.");
+                throw new InvalidOperationException(text.AutorunRegistryUnavailable);
 
             key.DeleteValue(RunValueName, false);
-            MessageBox.Show("Autorun removed.", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(text.AutorunRemoved, text.AppName, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to remove autorun:\n{ex.Message}", "MicLockTray", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(
+                UiText.Format(text.AutorunRemoveFailedFormat, ex.Message),
+                text.AppName,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
     }
 }
