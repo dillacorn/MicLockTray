@@ -19,29 +19,30 @@ internal sealed class TrayApp : ApplicationContext
 
     public TrayApp()
     {
+        var text = UiText.Current;
         _trayIcon = LoadTrayIcon();
 
         _icon = new NotifyIcon
         {
             Icon = _trayIcon,
-            Text = $"MicLockTray: target {Settings.TargetPercent}%",
+            Text = UiText.Format(text.TrayTooltipFormat, Settings.TargetPercent),
             Visible = true,
             ContextMenuStrip = new ContextMenuStrip()
         };
 
-        _toggleItem = new ToolStripMenuItem("Pause enforcement");
-        _setTargetItem = new ToolStripMenuItem("Set target volume…");
+        _toggleItem = new ToolStripMenuItem(text.PauseEnforcement);
+        _setTargetItem = new ToolStripMenuItem(text.SetTargetVolume);
         _icon.ContextMenuStrip!.Items.Add(_toggleItem);
         _icon.ContextMenuStrip.Items.Add(_setTargetItem);
         _icon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
 
-        _installItem = new ToolStripMenuItem("Install autorun") { Enabled = !Installer.IsInstalled() };
-        _uninstallItem = new ToolStripMenuItem("Remove autorun") { Enabled = Installer.IsInstalled() };
+        _installItem = new ToolStripMenuItem(text.InstallAutorun) { Enabled = !Installer.IsInstalled() };
+        _uninstallItem = new ToolStripMenuItem(text.RemoveAutorun) { Enabled = Installer.IsInstalled() };
         _icon.ContextMenuStrip.Items.Add(_installItem);
         _icon.ContextMenuStrip.Items.Add(_uninstallItem);
         _icon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
 
-        var exitItem = new ToolStripMenuItem("Exit");
+        var exitItem = new ToolStripMenuItem(text.Exit);
         _icon.ContextMenuStrip.Items.Add(exitItem);
 
         _enforcer = new MicEnforcer(() => Settings.TargetPercent / 100f);
@@ -56,7 +57,11 @@ internal sealed class TrayApp : ApplicationContext
 
         try
         {
-            _icon.ShowBalloonTip(1200, "MicLockTray", $"Microphone volume locked to {Settings.TargetPercent}%.", ToolTipIcon.Info);
+            _icon.ShowBalloonTip(
+                1200,
+                text.AppName,
+                UiText.Format(text.StartupBalloonFormat, Settings.TargetPercent),
+                ToolTipIcon.Info);
         }
         catch { }
 
@@ -100,35 +105,46 @@ internal sealed class TrayApp : ApplicationContext
 
     private void ToggleEnforcement()
     {
+        var text = UiText.Current;
+
         if (_enforcer.IsEnabled)
         {
             _enforcer.Disable();
-            _toggleItem.Text = "Resume enforcement";
-            try { _icon.ShowBalloonTip(800, "MicLockTray", "Paused.", ToolTipIcon.None); } catch { }
+            _toggleItem.Text = text.ResumeEnforcement;
+            try { _icon.ShowBalloonTip(800, text.AppName, text.PausedBalloon, ToolTipIcon.None); } catch { }
             return;
         }
 
         _enforcer.Enable();
         _enforcer.ForceToTarget();
-        _toggleItem.Text = "Pause enforcement";
+        _toggleItem.Text = text.PauseEnforcement;
         try
         {
-            _icon.ShowBalloonTip(800, "MicLockTray", $"Resumed. Locking at {Settings.TargetPercent}% on change.", ToolTipIcon.Info);
+            _icon.ShowBalloonTip(
+                800,
+                text.AppName,
+                UiText.Format(text.ResumedBalloonFormat, Settings.TargetPercent),
+                ToolTipIcon.Info);
         }
         catch { }
     }
 
     private void PromptAndSetTarget()
     {
+        var text = UiText.Current;
         using var dialog = new VolumePrompt(Settings.TargetPercent);
         if (dialog.ShowDialog() != DialogResult.OK) return;
 
         Settings.SetTarget(dialog.Value);
-        _icon.Text = $"MicLockTray: target {Settings.TargetPercent}%";
+        _icon.Text = UiText.Format(text.TrayTooltipFormat, Settings.TargetPercent);
         _enforcer.ForceToTarget();
         try
         {
-            _icon.ShowBalloonTip(900, "MicLockTray", $"Target set to {Settings.TargetPercent}%.", ToolTipIcon.Info);
+            _icon.ShowBalloonTip(
+                900,
+                text.AppName,
+                UiText.Format(text.TargetSetBalloonFormat, Settings.TargetPercent),
+                ToolTipIcon.Info);
         }
         catch { }
     }
@@ -162,7 +178,9 @@ internal sealed class VolumePrompt : Form
 
     public VolumePrompt(int current)
     {
-        Text = "Set target volume (%)";
+        var text = UiText.Current;
+
+        Text = text.VolumeDialogTitle;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterScreen;
         MinimizeBox = false;
@@ -175,7 +193,7 @@ internal sealed class VolumePrompt : Form
 
         var label = new Label
         {
-            Text = "Volume (1–100):",
+            Text = text.VolumeLabel,
             AutoSize = true,
             Anchor = AnchorStyles.Left
         };
@@ -191,14 +209,14 @@ internal sealed class VolumePrompt : Form
 
         _okButton = new Button
         {
-            Text = "OK",
+            Text = text.Ok,
             DialogResult = DialogResult.OK,
             AutoSize = true
         };
 
         _cancelButton = new Button
         {
-            Text = "Cancel",
+            Text = text.Cancel,
             DialogResult = DialogResult.Cancel,
             AutoSize = true
         };
