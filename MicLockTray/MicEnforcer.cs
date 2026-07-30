@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
+using ThreadingTimer = System.Threading.Timer;
 
 namespace MicLockTray;
 
@@ -88,7 +89,7 @@ internal sealed class MicEnforcer : IDisposable
         (CoreAudio.IMMDeviceEnumerator)new CoreAudio.MMDeviceEnumerator();
     private readonly NotificationClient _notificationClient;
     private readonly Dictionary<CoreAudio.ERole, Binding> _bindings = new();
-    private readonly Dictionary<CoreAudio.ERole, Timer> _rebindTimers = new();
+    private readonly Dictionary<CoreAudio.ERole, ThreadingTimer> _rebindTimers = new();
 
     private bool _notificationRegistered;
     private bool _enabled;
@@ -147,7 +148,7 @@ internal sealed class MicEnforcer : IDisposable
     public void Disable()
     {
         Binding[] bindings;
-        Timer[] timers;
+        ThreadingTimer[] timers;
         bool unregisterNotifications;
 
         lock (_gate)
@@ -224,7 +225,7 @@ internal sealed class MicEnforcer : IDisposable
                 return;
             }
 
-            _rebindTimers[role] = new Timer(
+            _rebindTimers[role] = new ThreadingTimer(
                 _ => RebindNow(role),
                 null,
                 RebindDelayMs,
