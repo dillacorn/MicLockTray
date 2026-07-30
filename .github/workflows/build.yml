@@ -1,22 +1,20 @@
-name: build
+name: testing-exe
 
 on:
   push:
     branches:
-      - main
-      - 'agent/**'
-  pull_request:
+      - testing
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  build-testing-exe:
     runs-on: windows-latest
 
     steps:
-      - name: Check out repository
+      - name: Check out testing branch
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up .NET
@@ -24,14 +22,31 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Build
-        run: dotnet build MicLockTray/MicLockTray.csproj --configuration Release
-
-      - name: Validate single-file publish
+      - name: Publish testing executable
         run: >-
           dotnet publish MicLockTray/MicLockTray.csproj
           --configuration Release
           --runtime win-x64
           --self-contained true
           -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
           --output publish
+
+      - name: Verify EXE-only output
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem publish -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'MicLockTray.exe') {
+            $names = ($files | ForEach-Object Name) -join ', '
+            throw "Expected only MicLockTray.exe, found: $names"
+          }
+
+      - name: Upload MicLockTray.exe
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          path: publish/MicLockTray.exe
+          if-no-files-found: error
+          retention-days: 14
+          archive: false
