@@ -12,10 +12,19 @@ Windows tray app that keeps your microphone input volume fixed at a user-chosen 
 
 - Locks mic input volume to a chosen target (1–100%).
 - Simple tray UI: Pause/Resume, Set target volume, Install/Remove autorun, Exit.
+- Automatically follows the Windows display language for included translations.
 - No admin required. Per-user autorun.
 - Lightweight single EXE. No dependencies. No telemetry. No log files.
 - Uses Windows Core Audio APIs (`IAudioEndpointVolume`).
 - [NirCmd](https://www.nirsoft.net/utils/nircmd.html) NOT required — this is a standalone application developed by me!
+
+---
+
+## Localization
+
+MicLockTray detects the Windows user-interface culture at startup. English and Simplified Chinese are currently included; unsupported languages safely fall back to English. Translation strings remain embedded in the main executable, so localization does not add runtime dependencies or extra language files.
+
+Simplified Chinese translation adapted from [BaoZiFly-233/MicLockTray](https://github.com/BaoZiFly-233/MicLockTray).
 
 ---
 
