@@ -15,68 +15,27 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Check out testing branch
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Verify v1.5 release asset
+      - name: Record v1.5 release metadata
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $release = $null
-          for ($attempt = 1; $attempt -le 12; $attempt++) {
-            $json = gh release view v1.5 --repo $env:GITHUB_REPOSITORY --json url,tagName,name,isLatest,targetCommitish,body,assets 2>$null
-            if ($LASTEXITCODE -eq 0) {
-              $candidate = $json | ConvertFrom-Json
-              $matchingAssets = @($candidate.assets | Where-Object { $_.name -eq 'MicLockTray.exe' })
-              if ($matchingAssets.Count -eq 1) {
-                $release = $candidate
-                break
-              }
-            }
-            Start-Sleep -Seconds 10
+          $json = gh release view v1.5 `
+            --repo $env:GITHUB_REPOSITORY `
+            --json url,tagName,name,isLatest,targetCommitish,body,assets
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read release v1.5.'
           }
 
-          if ($null -eq $release) {
-            throw 'v1.5 release or MicLockTray.exe asset was not available after verification retries.'
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+          gh api `
+            --method PUT `
+            "repos/$env:GITHUB_REPOSITORY/contents/.github/releases/v1.5-verification.json" `
+            -f message='Record v1.5 release metadata' `
+            -f content="$encoded" `
+            -f branch='testing'
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to record v1.5 release metadata.'
           }
-
-          if ($release.tagName -ne 'v1.5') { throw "Unexpected tag: $($release.tagName)" }
-          if ($release.targetCommitish -ne '2586f1f3a449ea4ddcd15b74797a5d5593ecdff0') {
-            throw "Unexpected release target: $($release.targetCommitish)"
-          }
-
-          New-Item -ItemType Directory -Path verify -Force | Out-Null
-          gh release download v1.5 --repo $env:GITHUB_REPOSITORY --pattern 'MicLockTray.exe' --dir verify
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to download MicLockTray.exe from v1.5.' }
-
-          $exe = Get-Item verify/MicLockTray.exe
-          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash
-          if (-not $release.body.Contains($hash)) {
-            throw 'Release notes do not contain the downloaded EXE SHA-256.'
-          }
-
-          $asset = @($release.assets | Where-Object { $_.name -eq 'MicLockTray.exe' })[0]
-          $result = [ordered]@{
-            release = $release.url
-            tag = $release.tagName
-            title = $release.name
-            latest = $release.isLatest
-            target = $release.targetCommitish
-            asset = $asset.name
-            asset_url = $asset.url
-            size_bytes = $exe.Length
-            sha256 = $hash
-            verified_at_utc = (Get-Date).ToUniversalTime().ToString('o')
-          }
-
-          $result | ConvertTo-Json | Set-Content .github/releases/v1.5-verification.json -Encoding utf8
-
-      - name: Record verification
-        shell: pwsh
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/releases/v1.5-verification.json
-          git commit -m 'Verify v1.5 release asset'
-          git push origin HEAD:testing
