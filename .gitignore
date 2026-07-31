@@ -1,0 +1,12 @@
+.vs/
+.vscode/
+.idea/
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+publish/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
