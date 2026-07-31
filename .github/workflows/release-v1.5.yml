@@ -1,0 +1,82 @@
+name: release-v1.5
+
+on:
+  push:
+    branches:
+      - testing
+    paths:
+      - '.github/workflows/release-v1.5.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1.5
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out release metadata
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Check out released main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 2586f1f3a449ea4ddcd15b74797a5d5593ecdff0
+          path: source
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish MicLockTray.exe
+        run: >-
+          dotnet publish source/MicLockTray/MicLockTray.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          --output publish
+
+      - name: Verify and prepare release notes
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem publish -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'MicLockTray.exe') {
+            $names = ($files | ForEach-Object Name) -join ', '
+            throw "Expected only MicLockTray.exe, found: $names"
+          }
+
+          $hash = (Get-FileHash publish/MicLockTray.exe -Algorithm SHA256).Hash
+          $notes = Get-Content .github/releases/v1.5.md -Raw
+          $notes = $notes.Replace('{{SHA256}}', $hash)
+          Set-Content release-notes.md $notes -Encoding utf8
+          "MICLOCKTRAY_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create v1.5 release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v1.5 --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw 'Release v1.5 already exists.'
+          }
+
+          gh release create v1.5 `
+            'publish/MicLockTray.exe#MicLockTray.exe' `
+            --repo $env:GITHUB_REPOSITORY `
+            --target 2586f1f3a449ea4ddcd15b74797a5d5593ecdff0 `
+            --title 'v1.5' `
+            --notes-file release-notes.md `
+            --latest
+
+          Write-Host "Released MicLockTray.exe SHA256: $env:MICLOCKTRAY_SHA256"
