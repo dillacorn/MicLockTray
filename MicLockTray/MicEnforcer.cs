@@ -412,7 +412,8 @@ internal sealed class MicEnforcer : IDisposable
         {
             if (endpoint.GetMasterVolumeLevelScalar(out float current) == 0 &&
                 Math.Abs(current - target) <= 0.005f) return;
-            int hr = endpoint.SetMasterVolumeLevelScalar(target, _eventContext);
+            Guid eventContext = _eventContext;
+            int hr = endpoint.SetMasterVolumeLevelScalar(target, ref eventContext);
             if (hr != 0) Debug.WriteLine($"MicLockTray endpoint volume write failed: 0x{hr:X8}");
         }
         catch (Exception ex) { Debug.WriteLine($"MicLockTray endpoint volume write failed: {ex}"); }
