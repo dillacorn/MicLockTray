@@ -137,6 +137,11 @@ internal static class Program
                 Equal(System.Drawing.Color.FromArgb(211, 216, 222), light.BackColor,
                     "inline editor follows light menu theme");
                 Equal(36, light.Value, "light editor preserves initial target");
+                Equal(27, light.Height, "volume editor uses compact row height");
+                Equal(System.Windows.Forms.BorderStyle.FixedSingle, light.Input.BorderStyle,
+                    "numeric editor has only its own input border");
+                Equal(100m, light.Input.Maximum, "numeric editor allows 100 percent");
+                Equal(1m, light.Input.Minimum, "numeric editor limits values to 1 percent");
             }
 
             // The tray may sit on the bottom edge of an auto-hidden taskbar.
@@ -188,6 +193,25 @@ internal static class Program
                     "second lock click restores the label");
                 Equal(2, toggles, "successive lock clicks are accepted in one menu session");
             }
+
+            Equal(true, PersistentLockMenuItem.KeepFlyoutOpen(
+                System.Windows.Forms.ToolStripDropDownCloseReason.AppFocusChange, true),
+                "pointer/focus loss does not dismiss a visible microphone flyout");
+            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
+                System.Windows.Forms.ToolStripDropDownCloseReason.AppClicked, true),
+                "application click may dismiss the microphone flyout");
+            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
+                System.Windows.Forms.ToolStripDropDownCloseReason.ItemClicked, true),
+                "regular menu item click may dismiss the flyout");
+            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
+                System.Windows.Forms.ToolStripDropDownCloseReason.Keyboard, true),
+                "keyboard dismissal remains available");
+            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
+                System.Windows.Forms.ToolStripDropDownCloseReason.CloseCalled, true),
+                "explicit root close dismisses the flyout");
+            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
+                System.Windows.Forms.ToolStripDropDownCloseReason.AppFocusChange, false),
+                "a closed parent never preserves detached submenus");
 
             Console.WriteLine($"PASS: {_assertions} settings, interop and UI regression assertions");
         }
