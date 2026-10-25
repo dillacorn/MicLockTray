@@ -8,6 +8,17 @@ internal static class UiText
     internal sealed class Strings
     {
         public string AppName { get; init; } = "";
+        public string Microphones { get; init; } = "";
+        public string NoMicrophones { get; init; } = "";
+        public string DisconnectedMicrophonesFormat { get; init; } = "";
+        public string LockMicrophone { get; init; } = "";
+        public string UnlockMicrophone { get; init; } = "";
+        public string ForgetMicrophone { get; init; } = "";
+        public string DefaultFallback { get; init; } = "";
+        public string DefaultFallbackDescription { get; init; } = "";
+        public string DisableNotifications { get; init; } = "";
+        public string EnableNotifications { get; init; } = "";
+        public string FirstLaunchHint { get; init; } = "";
         public string TrayTooltipFormat { get; init; } = "";
         public string PauseEnforcement { get; init; } = "";
         public string ResumeEnforcement { get; init; } = "";
@@ -33,6 +44,17 @@ internal static class UiText
     private static readonly Strings English = new()
     {
         AppName = "MicLockTray",
+        Microphones = "Microphones",
+        NoMicrophones = "No active microphones",
+        DisconnectedMicrophonesFormat = "Disconnected microphones ({0})",
+        LockMicrophone = "Lock microphone",
+        UnlockMicrophone = "Unlock microphone",
+        ForgetMicrophone = "Forget saved microphone",
+        DefaultFallback = "Default mic fallback",
+        DefaultFallbackDescription = "Applies to default recording microphones without individual settings.",
+        DisableNotifications = "Disable notifications",
+        EnableNotifications = "Enable notifications",
+        FirstLaunchHint = "↑ Right-click me to choose microphones and locked volume levels.",
         TrayTooltipFormat = "MicLockTray: target {0}%",
         PauseEnforcement = "Pause enforcement",
         ResumeEnforcement = "Resume enforcement",
@@ -59,6 +81,17 @@ internal static class UiText
     private static readonly Strings SimplifiedChinese = new()
     {
         AppName = "MicLockTray",
+        Microphones = "麦克风",
+        NoMicrophones = "没有活动的麦克风",
+        DisconnectedMicrophonesFormat = "已断开的麦克风 ({0})",
+        LockMicrophone = "锁定麦克风",
+        UnlockMicrophone = "解锁麦克风",
+        ForgetMicrophone = "忘记已保存的麦克风",
+        DefaultFallback = "默认麦克风备用锁定",
+        DefaultFallbackDescription = "适用于尚未单独设置的默认录音设备。",
+        DisableNotifications = "禁用通知",
+        EnableNotifications = "启用通知",
+        FirstLaunchHint = "↑ 右键点击此图标，选择要锁定的麦克风和音量。",
         TrayTooltipFormat = "MicLockTray：目标 {0}%",
         PauseEnforcement = "暂停锁定",
         ResumeEnforcement = "恢复锁定",
