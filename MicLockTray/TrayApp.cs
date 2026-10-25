@@ -83,24 +83,33 @@ internal sealed class TrayApp : ApplicationContext
         if (devices.Length == 0)
             _menu.Items.Add(new ToolStripMenuItem(text.NoMicrophones) { Enabled = false });
 
+        // One click on the microphone row toggles its lock.
         foreach (var device in devices)
         {
             var saved = Settings.GetDevice(device.Id);
             bool locked = saved?.Locked ?? (device.IsDefault && Settings.DefaultLocked);
             int target = saved?.TargetPercent ?? Settings.TargetPercent;
-            var item = NewItem($"{LockMark(locked)} {device.Name} — {target}%");
-            item.ToolTipText = device.Name;
-            item.DropDownItems.Add(NewItem(locked ? text.UnlockMicrophone : text.LockMicrophone,
-                () =>
-                {
-                    Settings.SetDeviceLock(device.Id, device.Name, !locked,
-                        saved?.TargetPercent ?? (device.IsDefault ? Settings.TargetPercent : device.CurrentPercent));
-                    _enforcer.ForceToTarget();
-
-                }));
-            item.DropDownItems.Add(NewItem(text.SetTargetVolume, () =>
-                PromptDeviceVolume(device.Id, device.Name, saved?.TargetPercent ?? device.CurrentPercent)));
+            var item = NewItem($"{LockMark(locked)} {device.Name} — {target}%", () =>
+            {
+                Settings.SetDeviceLock(device.Id, device.Name, !locked,
+                    saved?.TargetPercent ?? (device.IsDefault ? Settings.TargetPercent : device.CurrentPercent));
+                _enforcer.ForceToTarget();
+            });
+            item.ToolTipText = locked ? text.UnlockMicrophone : text.LockMicrophone;
             _menu.Items.Add(item);
+        }
+
+        if (devices.Length > 0)
+        {
+            var volumeMenu = NewItem(text.SetMicrophoneVolume);
+            foreach (var device in devices)
+            {
+                var saved = Settings.GetDevice(device.Id);
+                int target = saved?.TargetPercent ?? device.CurrentPercent;
+                volumeMenu.DropDownItems.Add(NewItem($"{device.Name} — {target}%", () =>
+                    PromptDeviceVolume(device.Id, device.Name, target)));
+            }
+            _menu.Items.Add(volumeMenu);
         }
 
         var offline = Settings.GetSavedDevices().Where(device => !activeIds.Contains(device.Id)).ToArray();
