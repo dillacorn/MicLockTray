@@ -25,6 +25,7 @@ internal static class Settings
         public bool default_locked { get; set; } = true;
         public bool notifications_enabled { get; set; } = true;
         public bool onboarding_shown { get; set; }
+        public string menu_theme { get; set; } = "system";
         public Dictionary<string, DeviceDto> devices { get; set; } = new();
     }
 
@@ -38,12 +39,14 @@ internal static class Settings
     private static bool _defaultLocked = true;
     private static bool _notificationsEnabled = true;
     private static bool _onboardingShown;
+    private static string _menuTheme = "system";
     private static Dictionary<string, DeviceSetting> _devices = new(StringComparer.OrdinalIgnoreCase);
 
     public static int TargetPercent { get { lock (Gate) return _targetPercent; } }
     public static bool DefaultLocked { get { lock (Gate) return _defaultLocked; } }
     public static bool NotificationsEnabled { get { lock (Gate) return _notificationsEnabled; } }
     public static bool OnboardingShown { get { lock (Gate) return _onboardingShown; } }
+    public static string MenuTheme { get { lock (Gate) return _menuTheme; } }
 
     // Isolate the real per-user settings when running the standalone regression tests.
     internal static void UseTestDirectory(string path)
@@ -56,6 +59,7 @@ internal static class Settings
             _defaultLocked = true;
             _notificationsEnabled = true;
             _onboardingShown = false;
+            _menuTheme = "system";
             _devices = new Dictionary<string, DeviceSetting>(StringComparer.OrdinalIgnoreCase);
         }
     }
@@ -74,6 +78,7 @@ internal static class Settings
                 _defaultLocked = config.default_locked;
                 _notificationsEnabled = config.notifications_enabled;
                 _onboardingShown = config.onboarding_shown;
+                _menuTheme = NormalizeTheme(config.menu_theme);
                 _devices = new Dictionary<string, DeviceSetting>(StringComparer.OrdinalIgnoreCase);
                 foreach (var entry in config.devices ?? new Dictionary<string, DeviceDto>())
                 {
@@ -130,6 +135,14 @@ internal static class Settings
         lock (Gate) { _notificationsEnabled = value; Save(); }
     }
 
+    private static string NormalizeTheme(string? theme) =>
+        theme is "light" or "dark" ? theme : "system";
+
+    public static void SetMenuTheme(string theme)
+    {
+        lock (Gate) { _menuTheme = NormalizeTheme(theme); Save(); }
+    }
+
     public static void SetOnboardingShown()
     {
         lock (Gate) { _onboardingShown = true; Save(); }
@@ -175,6 +188,7 @@ internal static class Settings
                 default_locked = _defaultLocked,
                 notifications_enabled = _notificationsEnabled,
                 onboarding_shown = _onboardingShown,
+                menu_theme = _menuTheme,
                 devices = _devices.ToDictionary(
                     pair => pair.Key,
                     pair => new DeviceDto
