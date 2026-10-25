@@ -168,6 +168,27 @@ internal static class Program
             Equal(true, upperTaskbar.Y >= 58,
                 "top taskbar keeps context menu within work area");
 
+            // Only microphone lock actions should keep their submenu open.
+            using (var lockItem = new PersistentLockMenuItem { Text = "Unlock microphone" })
+            {
+                Equal(true, lockItem.KeepsMenuOpen,
+                    "microphone lock action does not dismiss the context menu");
+                int toggles = 0;
+                lockItem.Click += (_, _) =>
+                {
+                    toggles++;
+                    lockItem.Text = toggles % 2 == 0
+                        ? "Unlock microphone" : "Lock microphone";
+                };
+                lockItem.PerformClick();
+                Equal("Lock microphone", lockItem.Text,
+                    "lock label updates immediately after a click");
+                lockItem.PerformClick();
+                Equal("Unlock microphone", lockItem.Text,
+                    "second lock click restores the label");
+                Equal(2, toggles, "successive lock clicks are accepted in one menu session");
+            }
+
             Console.WriteLine($"PASS: {_assertions} settings, interop and UI regression assertions");
         }
         finally
