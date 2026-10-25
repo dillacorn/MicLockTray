@@ -116,7 +116,7 @@ internal sealed class TrayApp : ApplicationContext
 
             // The row only opens a submenu. The submenu has exactly one lock toggle.
             var row = NewItem(DeviceCaption(device.Name, target, locked, device.IsBound));
-            row.DropDownItems.Add(NewItem(locked ? text.UnlockMicrophone : text.LockMicrophone,
+            var lockAction = NewItem(locked ? text.UnlockMicrophone : text.LockMicrophone,
                 () =>
                 {
                     bool next = !Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue;
@@ -124,11 +124,13 @@ internal sealed class TrayApp : ApplicationContext
                         saved?.TargetPercent ?? (device.IsDefault
                             ? Settings.TargetPercent : device.CurrentPercent));
                     _enforcer.ForceToTarget();
-                }));
+                });
+            row.DropDownItems.Add(lockAction);
             row.DropDownItems.Add(NewVolumeControl(target, newValue =>
             {
                 Settings.SetDeviceTarget(device.Id, device.Name, newValue);
                 _enforcer.ForceToTarget();
+                lockAction.Text = text.UnlockMicrophone;
                 row.Text = DeviceCaption(device.Name, newValue, true, device.IsBound);
                 UpdateTooltip(_enforcer.GetDevices());
             }));
@@ -153,13 +155,15 @@ internal sealed class TrayApp : ApplicationContext
             {
                 var row = NewItem(DeviceCaption(device.Name, device.TargetPercent,
                     device.Locked, bound: true));
-                row.DropDownItems.Add(NewItem(
+                var lockAction = NewItem(
                     device.Locked ? text.UnlockMicrophone : text.LockMicrophone, () =>
                         Settings.SetDeviceLock(device.Id, device.Name, !device.Locked,
-                            device.TargetPercent)));
+                            device.TargetPercent));
+                row.DropDownItems.Add(lockAction);
                 row.DropDownItems.Add(NewVolumeControl(device.TargetPercent, newValue =>
                 {
                     Settings.SetDeviceTarget(device.Id, device.Name, newValue);
+                    lockAction.Text = text.UnlockMicrophone;
                     row.Text = DeviceCaption(device.Name, newValue, locked: true, bound: true);
                 }));
                 row.DropDownItems.Add(new ToolStripSeparator());
