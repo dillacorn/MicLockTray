@@ -33,6 +33,7 @@ internal sealed class TrayApp : ApplicationContext
             ShowItemToolTips = false
         };
         ApplyMenuAppearance();
+        _menu.Closed += (_, _) => CloseSubmenus();
 
         _icon = new NotifyIcon
         {
@@ -128,6 +129,39 @@ internal sealed class TrayApp : ApplicationContext
             ConfigureDropDownDirection(nested, menuLeft, bounds);
     }
 
+    private void CloseSubmenus()
+    {
+        foreach (var item in _menu.Items.OfType<ToolStripMenuItem>())
+            CloseSubmenu(item);
+    }
+
+    private static void CloseSubmenu(ToolStripMenuItem item)
+    {
+        if (!item.HasDropDownItems) return;
+        foreach (var child in item.DropDownItems.OfType<ToolStripMenuItem>())
+            CloseSubmenu(child);
+        if (item.DropDown.Visible) item.DropDown.Close();
+    }
+
+    private void KeepSubmenuOpenOnPointerLeave(ToolStripMenuItem item)
+    {
+        // Keep the capture submenu visible while moving the pointer outside it.
+        // Actual clicks, keyboard dismissal, and an explicit root close still work.
+        item.DropDown.AutoClose = false;
+        item.DropDown.Closing += (_, e) =>
+        {
+            e.Cancel = e.CloseReason == ToolStripDropDownCloseReason.AppFocusChange
+                && _menu.Visible;
+        };
+        item.DropDownOpening += (_, _) =>
+        {
+            foreach (var other in _menu.Items.OfType<ToolStripMenuItem>())
+            {
+                if (!ReferenceEquals(other, item)) CloseSubmenu(other);
+            }
+        };
+    }
+
     private void PopulateMenu()
     {
         var text = UiText.Current;
@@ -174,7 +208,9 @@ internal sealed class TrayApp : ApplicationContext
                 UpdateTooltip(_enforcer.GetDevices());
             };
 
-            // Volume and properties are the most frequently used controls.
+            // Keep the single lock control prominent, with consistent spacing.
+            row.DropDownItems.Add(lockAction);
+            row.DropDownItems.Add(new ToolStripSeparator());
             row.DropDownItems.Add(NewVolumeControl(target, newValue =>
             {
                 Settings.SetDeviceTarget(device.Id, device.Name, newValue);
@@ -184,13 +220,19 @@ internal sealed class TrayApp : ApplicationContext
                 UpdateTooltip(_enforcer.GetDevices());
             }));
             row.DropDownItems.Add(NewItem(text.MicrophoneProperties, () =>
+            {
+                _menu.Close();
                 OpenExternalTarget("ms-settings:sound-properties?endpointId=" +
-                    Uri.EscapeDataString(device.Id))));
+                    Uri.EscapeDataString(device.Id));
+            }));
             // Windows does not expose a reliable direct link to a specific legacy
             // recording-device dialog. This opens its containing Recording tab.
-            row.DropDownItems.Add(NewItem(text.ClassicSoundPanel, OpenClassicRecordingPanel));
-            row.DropDownItems.Add(new ToolStripSeparator());
-            row.DropDownItems.Add(lockAction);
+            row.DropDownItems.Add(NewItem(text.ClassicSoundPanel, () =>
+            {
+                _menu.Close();
+                OpenClassicRecordingPanel();
+            }));
+            KeepSubmenuOpenOnPointerLeave(row);
             _menu.Items.Add(row);
         }
 
@@ -219,6 +261,8 @@ internal sealed class TrayApp : ApplicationContext
                         saved.Locked, bound: true);
                 };
 
+                row.DropDownItems.Add(lockAction);
+                row.DropDownItems.Add(new ToolStripSeparator());
                 row.DropDownItems.Add(NewVolumeControl(device.TargetPercent, newValue =>
                 {
                     Settings.SetDeviceTarget(device.Id, device.Name, newValue);
@@ -226,9 +270,11 @@ internal sealed class TrayApp : ApplicationContext
                     row.Text = DeviceCaption(device.Name, newValue, locked: true, bound: true);
                 }));
                 row.DropDownItems.Add(NewItem(text.ForgetMicrophone, () =>
-                    Settings.ForgetDevice(device.Id)));
-                row.DropDownItems.Add(new ToolStripSeparator());
-                row.DropDownItems.Add(lockAction);
+                {
+                    Settings.ForgetDevice(device.Id);
+                    _menu.Close();
+                }));
+                KeepSubmenuOpenOnPointerLeave(row);
                 offlineMenu.DropDownItems.Add(row);
             }
             _menu.Items.Add(offlineMenu);
@@ -293,7 +339,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             AutoSize = false,
             Size = editor.Size,
-            Margin = new Padding(2, 2, 2, 4),
+            Margin = new Padding(0, 0, 0, 1),
             Padding = Padding.Empty,
             BackColor = _menuBackground
         };
