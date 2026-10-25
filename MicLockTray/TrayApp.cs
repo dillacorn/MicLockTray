@@ -18,9 +18,10 @@ internal sealed class TrayApp : ApplicationContext
     private readonly Icon _trayIcon;
     private readonly ContextMenuStrip _menu;
     private readonly MicEnforcer _enforcer;
+    private readonly System.Windows.Forms.Timer? _startupTipTimer;
     private bool _cleanedUp;
 
-    public TrayApp()
+    public TrayApp(bool startedHidden = false)
     {
         var text = UiText.Current;
         _trayIcon = LoadTrayIcon();
@@ -37,7 +38,7 @@ internal sealed class TrayApp : ApplicationContext
         _icon = new NotifyIcon
         {
             Icon = _trayIcon,
-            Text = UiText.Format(text.TrayTooltipFormat, Settings.TargetPercent),
+            Text = text.AppName,
             ContextMenuStrip = _menu,
             Visible = true
         };
@@ -47,16 +48,27 @@ internal sealed class TrayApp : ApplicationContext
         _enforcer.ForceToTarget();
         PopulateMenu();
 
-        // The tray overflow itself is controlled by Windows. A balloon is the
-        // supported way to point first-time users toward the app's icon.
-        if (!Settings.OnboardingShown)
+        // Defer notifications until the Windows message loop is running. The shell
+        // controls tray overflow visibility, so it cannot be forcibly expanded.
+        // Autorun uses --hidden; do not consume the onboarding hint in that mode.
+        if (!startedHidden)
         {
-            Settings.SetOnboardingShown();
-            Notify(text.FirstLaunchHint, 5000);
-        }
-        else
-        {
-            Notify(UiText.Format(text.StartupBalloonFormat, Settings.TargetPercent), 1200);
+            _startupTipTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+            _startupTipTimer.Tick += (_, _) =>
+            {
+                _startupTipTimer.Stop();
+                if (!Settings.NotificationsEnabled) return;
+                if (!Settings.OnboardingShown)
+                {
+                    Notify(text.FirstLaunchHint, 5000);
+                    Settings.SetOnboardingShown();
+                }
+                else
+                {
+                    Notify(UiText.Format(text.StartupBalloonFormat, Settings.TargetPercent), 1200);
+                }
+            };
+            _startupTipTimer.Start();
         }
 
         Application.ApplicationExit += (_, _) => Cleanup();
@@ -76,6 +88,7 @@ internal sealed class TrayApp : ApplicationContext
 
         var devices = _enforcer.GetDevices();
         var activeIds = new HashSet<string>(devices.Select(d => d.Id), StringComparer.OrdinalIgnoreCase);
+        UpdateTooltip(devices);
 
         var heading = new ToolStripMenuItem(text.Microphones) { Enabled = false };
         _menu.Items.Add(heading);
@@ -88,7 +101,8 @@ internal sealed class TrayApp : ApplicationContext
         {
             var saved = Settings.GetDevice(device.Id);
             bool locked = saved?.Locked ?? (device.IsDefault && Settings.DefaultLocked);
-            int target = saved?.TargetPercent ?? Settings.TargetPercent;
+            int target = saved?.TargetPercent ?? (device.IsDefault && Settings.DefaultLocked
+                ? Settings.TargetPercent : device.CurrentPercent);
             var item = NewItem($"{LockMark(locked)} {device.Name} — {target}%", () =>
             {
                 Settings.SetDeviceLock(device.Id, device.Name, !locked,
@@ -177,6 +191,19 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Items.Add(NewItem(text.Exit, () => ExitThreadCore()));
     }
 
+    private void UpdateTooltip(MicEnforcer.DeviceInfo[] devices)
+    {
+        var text = UiText.Current;
+        if (!_enforcer.IsEnabled)
+        {
+            _icon.Text = text.PausedTooltip;
+            return;
+        }
+        int lockedCount = devices.Count(device =>
+            Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue);
+        _icon.Text = UiText.Format(text.TrayTooltipFormat, lockedCount);
+    }
+
     private static ToolStripMenuItem NewItem(string label, Action? onClick = null, bool enabled = true)
     {
         var item = new ToolStripMenuItem(label)
@@ -225,7 +252,6 @@ internal sealed class TrayApp : ApplicationContext
         if (dialog.ShowDialog() != DialogResult.OK) return;
 
         Settings.SetTarget(dialog.Value);
-        _icon.Text = UiText.Format(UiText.Current.TrayTooltipFormat, Settings.TargetPercent);
         _enforcer.ForceToTarget();
 
         Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, Settings.TargetPercent), 900);
@@ -263,6 +289,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (_cleanedUp) return;
         _cleanedUp = true;
+        try { _startupTipTimer?.Stop(); _startupTipTimer?.Dispose(); } catch { }
         try { _enforcer.Dispose(); } catch { }
         try { _icon.Visible = false; } catch { }
         try { _menu.Dispose(); } catch { }
