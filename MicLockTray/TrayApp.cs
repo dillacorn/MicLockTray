@@ -318,12 +318,10 @@ internal sealed class TrayApp : ApplicationContext
         var item = keepOpen
             ? new PersistentLockMenuItem { Text = label }
             : new ToolStripMenuItem(label);
-        {
-            BackColor = _menuBackground,
-            ForeColor = _menuText,
-            Enabled = enabled,
-            AutoToolTip = false
-        };
+        item.BackColor = _menuBackground;
+        item.ForeColor = _menuText;
+        item.Enabled = enabled;
+        item.AutoToolTip = false;
         if (onClick is not null) item.Click += (_, _) => onClick();
         return item;
     }
