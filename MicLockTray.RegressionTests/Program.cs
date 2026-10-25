@@ -7,6 +7,7 @@ internal static class Program
 {
     private static int _assertions;
 
+    [STAThread]
     private static void Main()
     {
         string directory = Path.Combine(Path.GetTempPath(),
@@ -114,7 +115,31 @@ internal static class Program
                     methodName + " must pass the event-context GUID by reference");
             }
 
-            Console.WriteLine($"PASS: {_assertions} settings and interop regression assertions");
+            // Exercise the embedded WinForms editor without displaying a tray icon.
+            int changes = 0;
+            int latest = 0;
+            using (var dark = new InlineVolumeEditor(75, true, "Volume (1–100):",
+                       value => { changes++; latest = value; }))
+            {
+                Equal(75, dark.Value, "inline editor begins at current target");
+                Equal(System.Drawing.Color.FromArgb(27, 27, 27), dark.BackColor,
+                    "inline editor follows near-black menu theme");
+                Equal(0, changes, "building a submenu must not modify saved volume");
+                dark.SetValue(83);
+                Equal(83, latest, "editing target invokes the volume callback");
+                Equal(1, changes, "editing target triggers a single callback");
+                Equal(83, dark.Value, "edited target is displayed in same submenu");
+            }
+
+            using (var light = new InlineVolumeEditor(36, false, "Volume (1–100):",
+                       _ => { }))
+            {
+                Equal(System.Drawing.Color.FromArgb(211, 216, 222), light.BackColor,
+                    "inline editor follows light menu theme");
+                Equal(36, light.Value, "light editor preserves initial target");
+            }
+
+            Console.WriteLine($"PASS: {_assertions} settings, interop and UI regression assertions");
         }
         finally
         {
