@@ -8,14 +8,14 @@ A lightweight Windows tray app that keeps your microphone input volume where you
 
 - Lock any number of microphones at separate volumes (1–100%).
 - Remember each lock and volume after unplugging or restarting.
-- Right-click the tray icon to lock/unlock microphones, change volumes, pause enforcement, or control notifications and autorun.
-- Follow Windows light/dark mode or select a menu theme; open microphone properties and Sound panels directly.
+- Right-click the tray icon; hover a microphone to lock/unlock it, edit its target volume inline, or open properties.
+- Follow Windows light/dark mode or choose a menu theme. Pause enforcement, notifications, and autorun are optional.
 - Retain the original default-microphone lock for unconfigured devices.
 - No administrator access, extra utilities, telemetry, or log files. English and Simplified Chinese.
 
 ## Usage
 
-Run `MicLockTray.exe`, then **right-click its tray icon**. Click a microphone to lock or unlock it, or use **Set microphone volume…** to choose a target. Disconnected microphones retain their saved settings.
+Run `MicLockTray.exe`, then **right-click the tray icon**. Hover over a microphone to change its lock or volume. More controls are under **Options**. Disconnected microphones retain their saved settings.
 
 ## About
 
