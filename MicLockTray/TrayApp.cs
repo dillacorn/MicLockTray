@@ -148,6 +148,11 @@ internal sealed class TrayApp : ApplicationContext
         // Keep the capture submenu visible while moving the pointer outside it.
         // Actual clicks, keyboard dismissal, and an explicit root close still work.
         item.DropDown.AutoClose = false;
+        if (item.DropDown is ToolStripDropDownMenu dropDownMenu)
+        {
+            dropDownMenu.ShowImageMargin = false;
+            dropDownMenu.ShowCheckMargin = false;
+        }
         item.DropDown.Closing += (_, e) =>
         {
             e.Cancel = e.CloseReason == ToolStripDropDownCloseReason.AppFocusChange
