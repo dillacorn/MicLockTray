@@ -20,6 +20,7 @@ internal static class Program
             Equal(true, Settings.DefaultLocked, "first run locks default microphone");
             Equal(true, Settings.NotificationsEnabled, "existing notification default");
             Equal(false, Settings.OnboardingShown, "onboarding starts unshown");
+            Equal("system", Settings.MenuTheme, "menu follows Windows by default");
 
             // Simulate an unmodified v1.5 config that contains only target_percent.
             File.WriteAllText(Path.Combine(directory, "config.json"), """
@@ -33,6 +34,7 @@ internal static class Program
             Equal(null, Settings.EffectiveTarget("other-mic", false), "non-default not implicitly locked");
             Equal(true, Settings.DefaultLocked, "legacy fallback stays enabled");
             Equal(true, Settings.NotificationsEnabled, "legacy notifications stay enabled");
+            Equal("system", Settings.MenuTheme, "legacy config migrates to system theme");
 
             Settings.SetDeviceLock("USB-MIC", "USB microphone", true, 37);
             Settings.SetDeviceLock("HEADSET", "Headset microphone", true, 64);
@@ -56,6 +58,7 @@ internal static class Program
             Equal(45, Settings.EffectiveTarget("USB-MIC", false),
                 "disabling fallback does not disable explicit device locks");
             Settings.SetNotificationsEnabled(false);
+            Settings.SetMenuTheme("dark");
             Settings.SetOnboardingShown();
             Settings.SetTarget(28);
 
@@ -65,6 +68,7 @@ internal static class Program
             Equal(28, Settings.TargetPercent, "legacy target round-trips through JSON");
             Equal(false, Settings.DefaultLocked, "fallback setting persists");
             Equal(false, Settings.NotificationsEnabled, "notification setting persists");
+            Equal("dark", Settings.MenuTheme, "manual dark theme persists");
             Equal(true, Settings.OnboardingShown, "onboarding state persists");
             Equal(45, Settings.EffectiveTarget("USB-MIC", false), "USB target survives restart");
             Equal(64, Settings.EffectiveTarget("HEADSET", false), "headset target survives restart");
@@ -82,6 +86,17 @@ internal static class Program
             Equal(1, Settings.EffectiveTarget("HEADSET", false), "volume clamps below 1%");
             Settings.SetDeviceTarget("HEADSET", "Headset microphone", 500);
             Equal(100, Settings.EffectiveTarget("HEADSET", false), "volume clamps above 100%");
+
+            Equal(new Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"),
+                typeof(CoreAudio.IMMDeviceCollection).GUID,
+                "Windows capture enumeration interface must use the correct IID");
+
+            Equal(true, MenuAppearance.IsDark("dark", false), "manual dark overrides Windows light");
+            Equal(false, MenuAppearance.IsDark("light", true), "manual light overrides Windows dark");
+            Equal(true, MenuAppearance.IsDark("system", true), "system mode follows Windows dark");
+            Equal(false, MenuAppearance.IsDark("system", false), "system mode follows Windows light");
+            Settings.SetMenuTheme("unknown");
+            Equal("system", Settings.MenuTheme, "invalid menu theme falls back to system");
 
             // Match the native Core Audio ABI: these methods take LPCGUID, not a
             // by-value GUID. Reflection verifies the declaration without hardware.
