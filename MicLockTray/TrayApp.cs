@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -11,14 +12,16 @@ namespace MicLockTray;
 internal sealed class TrayApp : ApplicationContext
 {
     private const string IconFileName = "Papirus-Team-Papirus-Devices-Audio-input-microphone.ico";
-    private static readonly Color MenuBackground = Color.FromArgb(211, 216, 222);
-    private static readonly Color MenuText = Color.FromArgb(32, 42, 54);
+    private Color _menuBackground = Color.FromArgb(211, 216, 222);
+    private Color _menuText = Color.FromArgb(32, 42, 54);
+    private bool _menuDark;
 
     private readonly NotifyIcon _icon;
     private readonly Icon _trayIcon;
     private readonly ContextMenuStrip _menu;
     private readonly MicEnforcer _enforcer;
     private readonly System.Windows.Forms.Timer? _startupTipTimer;
+    private VolumePrompt? _activeVolumePrompt;
     private bool _cleanedUp;
 
     public TrayApp(bool startedHidden = false)
@@ -27,12 +30,10 @@ internal sealed class TrayApp : ApplicationContext
         _trayIcon = LoadTrayIcon();
         _menu = new ContextMenuStrip
         {
-            BackColor = MenuBackground,
-            ForeColor = MenuText,
-            Renderer = new ToolStripProfessionalRenderer(new MicColors()),
             ShowImageMargin = false,
             ShowCheckMargin = false
         };
+        ApplyMenuAppearance();
         _menu.Opening += RebuildMenu;
 
         _icon = new NotifyIcon
@@ -76,7 +77,18 @@ internal sealed class TrayApp : ApplicationContext
 
     private void RebuildMenu(object? sender, CancelEventArgs e)
     {
+        ApplyMenuAppearance();
         PopulateMenu();
+    }
+
+    private void ApplyMenuAppearance()
+    {
+        _menuDark = MenuAppearance.IsDark(Settings.MenuTheme, MenuAppearance.WindowsDarkMode());
+        _menuBackground = _menuDark ? Color.FromArgb(39, 44, 51) : Color.FromArgb(211, 216, 222);
+        _menuText = _menuDark ? Color.FromArgb(233, 237, 241) : Color.FromArgb(32, 42, 54);
+        _menu.BackColor = _menuBackground;
+        _menu.ForeColor = _menuText;
+        _menu.Renderer = new ToolStripProfessionalRenderer(new MicColors(_menuDark));
     }
 
     private void PopulateMenu()
@@ -90,11 +102,11 @@ internal sealed class TrayApp : ApplicationContext
         var activeIds = new HashSet<string>(devices.Select(d => d.Id), StringComparer.OrdinalIgnoreCase);
         UpdateTooltip(devices);
 
-        var heading = new ToolStripMenuItem(text.Microphones) { Enabled = false };
+        var heading = NewItem(text.Microphones, enabled: false);
         _menu.Items.Add(heading);
 
         if (devices.Length == 0)
-            _menu.Items.Add(new ToolStripMenuItem(text.NoMicrophones) { Enabled = false });
+            _menu.Items.Add(NewItem(text.NoMicrophones, enabled: false));
 
         // One click on the microphone row toggles its lock.
         foreach (var device in devices)
@@ -124,6 +136,16 @@ internal sealed class TrayApp : ApplicationContext
                     PromptDeviceVolume(device.Id, device.Name, target)));
             }
             _menu.Items.Add(volumeMenu);
+
+            var propertiesMenu = NewItem(text.MicrophoneProperties);
+            foreach (var device in devices)
+            {
+                string endpointId = device.Id;
+                propertiesMenu.DropDownItems.Add(NewItem(device.Name, () =>
+                    OpenSoundSettings("ms-settings:sound-properties?endpointId=" +
+                        Uri.EscapeDataString(endpointId))));
+            }
+            _menu.Items.Add(propertiesMenu);
         }
 
         var offline = Settings.GetSavedDevices().Where(device => !activeIds.Contains(device.Id)).ToArray();
@@ -188,6 +210,32 @@ internal sealed class TrayApp : ApplicationContext
 
         }, enabled: autorun));
         _menu.Items.Add(new ToolStripSeparator());
+
+        var soundMenu = NewItem(text.SoundPanels);
+        soundMenu.DropDownItems.Add(NewItem(text.WindowsSoundSettings,
+            () => OpenSoundSettings("ms-settings:sound")));
+        soundMenu.DropDownItems.Add(NewItem(text.ClassicSoundPanel, OpenClassicRecordingPanel));
+        _menu.Items.Add(soundMenu);
+
+        var themeMenu = NewItem(text.MenuTheme);
+        foreach (var option in new[]
+        {
+            (Code: "system", Label: text.ThemeSystem),
+            (Code: "light", Label: text.ThemeLight),
+            (Code: "dark", Label: text.ThemeDark)
+        })
+        {
+            bool selected = Settings.MenuTheme == option.Code;
+            themeMenu.DropDownItems.Add(NewItem(
+                (selected ? "✓ " : "   ") + option.Label, () =>
+                {
+                    Settings.SetMenuTheme(option.Code);
+                    ApplyMenuAppearance();
+                }));
+        }
+        _menu.Items.Add(themeMenu);
+
+        _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(NewItem(text.Exit, () => ExitThreadCore()));
     }
 
@@ -204,12 +252,12 @@ internal sealed class TrayApp : ApplicationContext
         _icon.Text = UiText.Format(text.TrayTooltipFormat, lockedCount);
     }
 
-    private static ToolStripMenuItem NewItem(string label, Action? onClick = null, bool enabled = true)
+    private ToolStripMenuItem NewItem(string label, Action? onClick = null, bool enabled = true)
     {
         var item = new ToolStripMenuItem(label)
         {
-            BackColor = MenuBackground,
-            ForeColor = MenuText,
+            BackColor = _menuBackground,
+            ForeColor = _menuText,
             Enabled = enabled
         };
         if (onClick is not null) item.Click += (_, _) => onClick();
@@ -235,23 +283,68 @@ internal sealed class TrayApp : ApplicationContext
 
     }
 
+    private void OpenClassicRecordingPanel()
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo("control.exe") { UseShellExecute = true };
+            startInfo.ArgumentList.Add("mmsys.cpl,,1");
+            Process.Start(startInfo);
+        }
+        catch (Exception ex) { ReportSoundSettingsError(ex); }
+    }
+
+    private void OpenSoundSettings(string uri)
+    {
+        try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); }
+        catch (Exception ex) { ReportSoundSettingsError(ex); }
+    }
+
+    private static void ReportSoundSettingsError(Exception ex)
+    {
+        var text = UiText.Current;
+        MessageBox.Show(UiText.Format(text.AudioSettingsErrorFormat, ex.Message),
+            text.AppName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+
+    private int? AskVolume(int initialPercent, string? name = null)
+    {
+        if (_activeVolumePrompt is { IsDisposed: false })
+        {
+            _activeVolumePrompt.Activate();
+            _activeVolumePrompt.BringToFront();
+            return null;
+        }
+
+        using var dialog = new VolumePrompt(initialPercent, name);
+        _activeVolumePrompt = dialog;
+        try
+        {
+            return dialog.ShowDialog() == DialogResult.OK ? dialog.Value : null;
+        }
+        finally
+        {
+            _activeVolumePrompt = null;
+        }
+    }
+
     private void PromptDeviceVolume(string id, string name, int initialPercent)
     {
-        using var dialog = new VolumePrompt(initialPercent, name);
-        if (dialog.ShowDialog() != DialogResult.OK) return;
+        int? chosen = AskVolume(initialPercent, name);
+        if (chosen is null) return;
 
-        Settings.SetDeviceTarget(id, name, dialog.Value);
+        Settings.SetDeviceTarget(id, name, chosen.Value);
         _enforcer.ForceToTarget();
 
-        Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, dialog.Value), 900);
+        Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, chosen.Value), 900);
     }
 
     private void PromptDefaultVolume()
     {
-        using var dialog = new VolumePrompt(Settings.TargetPercent);
-        if (dialog.ShowDialog() != DialogResult.OK) return;
+        int? chosen = AskVolume(Settings.TargetPercent);
+        if (chosen is null) return;
 
-        Settings.SetTarget(dialog.Value);
+        Settings.SetTarget(chosen.Value);
         _enforcer.ForceToTarget();
 
         Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, Settings.TargetPercent), 900);
@@ -305,21 +398,33 @@ internal sealed class TrayApp : ApplicationContext
 
     private sealed class MicColors : ProfessionalColorTable
     {
-        private static readonly Color Selected = Color.FromArgb(170, 184, 198);
-        public override Color ToolStripDropDownBackground => MenuBackground;
-        public override Color ImageMarginGradientBegin => MenuBackground;
-        public override Color ImageMarginGradientMiddle => MenuBackground;
-        public override Color ImageMarginGradientEnd => MenuBackground;
-        public override Color MenuBorder => Color.FromArgb(140, 153, 166);
-        public override Color MenuItemBorder => Color.FromArgb(130, 145, 160);
-        public override Color MenuItemSelected => Selected;
-        public override Color MenuItemSelectedGradientBegin => Selected;
-        public override Color MenuItemSelectedGradientEnd => Selected;
-        public override Color MenuItemPressedGradientBegin => Selected;
-        public override Color MenuItemPressedGradientMiddle => Selected;
-        public override Color MenuItemPressedGradientEnd => Selected;
-        public override Color SeparatorDark => Color.FromArgb(158, 167, 178);
-        public override Color SeparatorLight => MenuBackground;
+        private readonly Color _background;
+        private readonly Color _selected;
+        private readonly Color _border;
+        private readonly Color _separator;
+
+        public MicColors(bool dark)
+        {
+            _background = dark ? Color.FromArgb(39, 44, 51) : Color.FromArgb(211, 216, 222);
+            _selected = dark ? Color.FromArgb(66, 79, 92) : Color.FromArgb(170, 184, 198);
+            _border = dark ? Color.FromArgb(89, 102, 116) : Color.FromArgb(140, 153, 166);
+            _separator = dark ? Color.FromArgb(82, 92, 105) : Color.FromArgb(158, 167, 178);
+        }
+
+        public override Color ToolStripDropDownBackground => _background;
+        public override Color ImageMarginGradientBegin => _background;
+        public override Color ImageMarginGradientMiddle => _background;
+        public override Color ImageMarginGradientEnd => _background;
+        public override Color MenuBorder => _border;
+        public override Color MenuItemBorder => _border;
+        public override Color MenuItemSelected => _selected;
+        public override Color MenuItemSelectedGradientBegin => _selected;
+        public override Color MenuItemSelectedGradientEnd => _selected;
+        public override Color MenuItemPressedGradientBegin => _selected;
+        public override Color MenuItemPressedGradientMiddle => _selected;
+        public override Color MenuItemPressedGradientEnd => _selected;
+        public override Color SeparatorDark => _separator;
+        public override Color SeparatorLight => _background;
     }
 }
 
