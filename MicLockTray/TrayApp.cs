@@ -106,7 +106,8 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Items.Add(heading);
 
         if (devices.Length == 0)
-            _menu.Items.Add(NewItem(text.NoMicrophones, enabled: false));
+            _menu.Items.Add(NewItem(_enforcer.DeviceEnumerationFailed
+                ? text.DetectionFailed : text.NoMicrophones, enabled: false));
 
         // One click on the microphone row toggles its lock.
         foreach (var device in devices)
@@ -115,7 +116,9 @@ internal sealed class TrayApp : ApplicationContext
             bool locked = saved?.Locked ?? (device.IsDefault && Settings.DefaultLocked);
             int target = saved?.TargetPercent ?? (device.IsDefault && Settings.DefaultLocked
                 ? Settings.TargetPercent : device.CurrentPercent);
-            var item = NewItem($"{LockMark(locked)} {device.Name} — {target}%", () =>
+            var warning = _enforcer.IsEnabled && locked && !device.IsBound
+                ? $" ({text.NotEnforcing})" : string.Empty;
+            var item = NewItem($"{LockMark(locked)} {device.Name} — {target}%{warning}", () =>
             {
                 Settings.SetDeviceLock(device.Id, device.Name, !locked,
                     saved?.TargetPercent ?? (device.IsDefault ? Settings.TargetPercent : device.CurrentPercent));
@@ -248,7 +251,7 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
         int lockedCount = devices.Count(device =>
-            Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue);
+            device.IsBound && Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue);
         _icon.Text = UiText.Format(text.TrayTooltipFormat, lockedCount);
     }
 
