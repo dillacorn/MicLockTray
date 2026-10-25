@@ -29,10 +29,10 @@ internal static class Settings
     }
 
     private static readonly object Gate = new();
-    private static readonly string DirectoryPath = Path.Combine(
+    private static string _directoryPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MicLockTray");
-    private static readonly string ConfigPath = Path.Combine(DirectoryPath, "config.json");
-    private static readonly string TempConfigPath = Path.Combine(DirectoryPath, "config.json.tmp");
+    private static string ConfigPath => Path.Combine(_directoryPath, "config.json");
+    private static string TempConfigPath => Path.Combine(_directoryPath, "config.json.tmp");
 
     private static int _targetPercent = 100;
     private static bool _defaultLocked = true;
@@ -44,6 +44,21 @@ internal static class Settings
     public static bool DefaultLocked { get { lock (Gate) return _defaultLocked; } }
     public static bool NotificationsEnabled { get { lock (Gate) return _notificationsEnabled; } }
     public static bool OnboardingShown { get { lock (Gate) return _onboardingShown; } }
+
+    // Isolate the real per-user settings when running the standalone regression tests.
+    internal static void UseTestDirectory(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A test directory is required.", nameof(path));
+        lock (Gate)
+        {
+            _directoryPath = path;
+            _targetPercent = 100;
+            _defaultLocked = true;
+            _notificationsEnabled = true;
+            _onboardingShown = false;
+            _devices = new Dictionary<string, DeviceSetting>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
     public static void Load()
     {
@@ -153,7 +168,7 @@ internal static class Settings
         // Save always runs under Gate, so callbacks never observe partially updated configuration.
         try
         {
-            Directory.CreateDirectory(DirectoryPath);
+            Directory.CreateDirectory(_directoryPath);
             var config = new ConfigDto
             {
                 target_percent = _targetPercent,
