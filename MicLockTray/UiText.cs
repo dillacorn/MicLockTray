@@ -21,6 +21,8 @@ internal static class UiText
 
         public string SetMicrophoneVolume { get; init; } = "";
         public string NoMicrophones { get; init; } = "";
+        public string DetectionFailed { get; init; } = "";
+        public string NotEnforcing { get; init; } = "";
         public string DisconnectedMicrophonesFormat { get; init; } = "";
         public string LockMicrophone { get; init; } = "";
         public string UnlockMicrophone { get; init; } = "";
@@ -69,6 +71,8 @@ internal static class UiText
 
         SetMicrophoneVolume = "Set microphone volume…",
         NoMicrophones = "No active microphones",
+        DetectionFailed = "Unable to read microphones",
+        NotEnforcing = "not enforcing",
         DisconnectedMicrophonesFormat = "Disconnected microphones ({0})",
         LockMicrophone = "Lock microphone",
         UnlockMicrophone = "Unlock microphone",
@@ -118,6 +122,8 @@ internal static class UiText
 
         SetMicrophoneVolume = "设置麦克风音量…",
         NoMicrophones = "没有活动的麦克风",
+        DetectionFailed = "无法读取麦克风设备",
+        NotEnforcing = "未锁定",
         DisconnectedMicrophonesFormat = "已断开的麦克风 ({0})",
         LockMicrophone = "锁定麦克风",
         UnlockMicrophone = "解锁麦克风",
