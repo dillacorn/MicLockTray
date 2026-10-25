@@ -186,6 +186,9 @@ internal sealed class MicEnforcer : IDisposable
                 (binding, _defaultIds.Contains(binding.Id))).ToArray();
         }
 
+        if (!IsEnabled)
+            return GetDevicesWhilePaused();
+
         return bindings.Select(item =>
         {
             int volume = Settings.EffectiveTarget(item.binding.Id, item.isDefault) ?? Settings.TargetPercent;
@@ -199,6 +202,57 @@ internal sealed class MicEnforcer : IDisposable
             return new DeviceInfo(item.binding.Id, item.binding.Name, volume, item.isDefault);
         }).OrderByDescending(device => device.IsDefault)
           .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+    }
+
+    private DeviceInfo[] GetDevicesWhilePaused()
+    {
+        // Pausing releases callbacks but must not hide connected microphones from the menu.
+        // This enumeration runs only when the user opens the context menu, not on a timer.
+        var devices = new List<DeviceInfo>();
+        var defaults = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var role in Roles)
+            {
+                if (_enumerator.GetDefaultAudioEndpoint(CoreAudio.EDataFlow.eCapture,
+                        role, out var defaultDevice) != 0 || defaultDevice is null) continue;
+                string? id = CoreAudio.GetDeviceId(defaultDevice);
+                if (id is not null) defaults.Add(id);
+            }
+
+            if (_enumerator.EnumAudioEndpoints(CoreAudio.EDataFlow.eCapture,
+                    CoreAudio.ActiveDeviceState, out var collection) != 0 || collection is null)
+                return Array.Empty<DeviceInfo>();
+            if (collection.GetCount(out uint count) != 0) return Array.Empty<DeviceInfo>();
+
+            for (uint i = 0; i < count; i++)
+            {
+                if (collection.Item(i, out var device) != 0 || device is null) continue;
+                string? id = CoreAudio.GetDeviceId(device);
+                if (string.IsNullOrEmpty(id)) continue;
+
+                int current = Settings.EffectiveTarget(id, defaults.Contains(id)) ?? Settings.TargetPercent;
+                try
+                {
+                    Guid guid = CoreAudio.EndpointVolumeGuid;
+                    if (device.Activate(ref guid, 0x1, IntPtr.Zero, out var instance) == 0 &&
+                        instance is CoreAudio.IAudioEndpointVolume endpoint &&
+                        endpoint.GetMasterVolumeLevelScalar(out float scalar) == 0)
+                        current = Math.Clamp((int)Math.Round(scalar * 100), 0, 100);
+                }
+                catch (Exception ex) { Debug.WriteLine($"MicLockTray paused device read failed: {ex}"); }
+
+                devices.Add(new DeviceInfo(id, CoreAudio.GetFriendlyName(device, id),
+                    current, defaults.Contains(id)));
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"MicLockTray paused device enumeration failed: {ex}");
+        }
+
+        return devices.OrderByDescending(device => device.IsDefault)
+            .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
     public void ForceToTarget()
