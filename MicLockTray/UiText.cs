@@ -9,6 +9,16 @@ internal static class UiText
     {
         public string AppName { get; init; } = "";
         public string Microphones { get; init; } = "";
+        public string MicrophoneProperties { get; init; } = "";
+        public string SoundPanels { get; init; } = "";
+        public string ClassicSoundPanel { get; init; } = "";
+        public string WindowsSoundSettings { get; init; } = "";
+        public string MenuTheme { get; init; } = "";
+        public string ThemeSystem { get; init; } = "";
+        public string ThemeLight { get; init; } = "";
+        public string ThemeDark { get; init; } = "";
+        public string AudioSettingsErrorFormat { get; init; } = "";
+
         public string SetMicrophoneVolume { get; init; } = "";
         public string NoMicrophones { get; init; } = "";
         public string DisconnectedMicrophonesFormat { get; init; } = "";
@@ -47,6 +57,16 @@ internal static class UiText
     {
         AppName = "MicLockTray",
         Microphones = "Microphones",
+        MicrophoneProperties = "Microphone properties",
+        SoundPanels = "Sound settings",
+        ClassicSoundPanel = "Classic recording panel",
+        WindowsSoundSettings = "Windows sound settings",
+        MenuTheme = "Menu theme",
+        ThemeSystem = "Follow Windows",
+        ThemeLight = "Light",
+        ThemeDark = "Dark",
+        AudioSettingsErrorFormat = "Could not open sound settings:\\n{0}",
+
         SetMicrophoneVolume = "Set microphone volume…",
         NoMicrophones = "No active microphones",
         DisconnectedMicrophonesFormat = "Disconnected microphones ({0})",
@@ -86,6 +106,16 @@ internal static class UiText
     {
         AppName = "MicLockTray",
         Microphones = "麦克风",
+        MicrophoneProperties = "麦克风属性",
+        SoundPanels = "声音设置",
+        ClassicSoundPanel = "经典录音控制面板",
+        WindowsSoundSettings = "Windows 声音设置",
+        MenuTheme = "菜单主题",
+        ThemeSystem = "跟随 Windows",
+        ThemeLight = "浅色",
+        ThemeDark = "深色",
+        AudioSettingsErrorFormat = "无法打开声音设置：\\n{0}",
+
         SetMicrophoneVolume = "设置麦克风音量…",
         NoMicrophones = "没有活动的麦克风",
         DisconnectedMicrophonesFormat = "已断开的麦克风 ({0})",
