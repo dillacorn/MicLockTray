@@ -15,6 +15,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="MicLockTray.RegressionTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Ensure the file is included in the project (build-time only; not copied at runtime). -->
     <Content Include="Papirus-Team-Papirus-Devices-Audio-input-microphone.ico" />
   </ItemGroup>
