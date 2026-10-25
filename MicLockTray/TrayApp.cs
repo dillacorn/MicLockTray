@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -34,7 +33,6 @@ internal sealed class TrayApp : ApplicationContext
             ShowItemToolTips = false
         };
         ApplyMenuAppearance();
-        _menu.Opening += RebuildMenu;
 
         _icon = new NotifyIcon
         {
@@ -74,12 +72,6 @@ internal sealed class TrayApp : ApplicationContext
         }
 
         Application.ApplicationExit += (_, _) => Cleanup();
-    }
-
-    private void RebuildMenu(object? sender, CancelEventArgs e)
-    {
-        ApplyMenuAppearance();
-        PopulateMenu();
     }
 
     private void ApplyMenuAppearance()
