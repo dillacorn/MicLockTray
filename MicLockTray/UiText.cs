@@ -10,6 +10,7 @@ internal static class UiText
         public string AppName { get; init; } = "";
         public string Microphones { get; init; } = "";
         public string Options { get; init; } = "";
+        public string About { get; init; } = "";
         public string MicrophoneProperties { get; init; } = "";
         public string SoundPanels { get; init; } = "";
         public string ClassicSoundPanel { get; init; } = "";
@@ -61,6 +62,7 @@ internal static class UiText
         AppName = "MicLockTray",
         Microphones = "Microphones",
         Options = "Options",
+        About = "About MicLockTray",
         MicrophoneProperties = "Microphone properties",
         SoundPanels = "Sound settings",
         ClassicSoundPanel = "Classic recording panel",
@@ -113,6 +115,7 @@ internal static class UiText
         AppName = "MicLockTray",
         Microphones = "麦克风",
         Options = "选项",
+        About = "关于 MicLockTray",
         MicrophoneProperties = "麦克风属性",
         SoundPanels = "声音设置",
         ClassicSoundPanel = "经典录音控制面板",
