@@ -96,7 +96,7 @@ internal sealed class TrayApp : ApplicationContext
                     Settings.SetDeviceLock(device.Id, device.Name, !locked,
                         saved?.TargetPercent ?? (device.IsDefault ? Settings.TargetPercent : device.CurrentPercent));
                     _enforcer.ForceToTarget();
-                    PopulateMenu();
+
                 }));
             item.DropDownItems.Add(NewItem(text.SetTargetVolume, () =>
                 PromptDeviceVolume(device.Id, device.Name, saved?.TargetPercent ?? device.CurrentPercent)));
@@ -114,7 +114,7 @@ internal sealed class TrayApp : ApplicationContext
                     () =>
                     {
                         Settings.SetDeviceLock(device.Id, device.Name, !device.Locked, device.TargetPercent);
-                        PopulateMenu();
+
                     }));
                 item.DropDownItems.Add(NewItem(text.SetTargetVolume, () =>
                     PromptDeviceVolume(device.Id, device.Name, device.TargetPercent)));
@@ -122,7 +122,7 @@ internal sealed class TrayApp : ApplicationContext
                 item.DropDownItems.Add(NewItem(text.ForgetMicrophone, () =>
                 {
                     Settings.ForgetDevice(device.Id);
-                    PopulateMenu();
+
                 }));
                 offlineMenu.DropDownItems.Add(item);
             }
@@ -137,7 +137,7 @@ internal sealed class TrayApp : ApplicationContext
             {
                 Settings.SetDefaultLocked(!Settings.DefaultLocked);
                 _enforcer.ForceToTarget();
-                PopulateMenu();
+
             }));
         defaultItem.DropDownItems.Add(NewItem(text.SetTargetVolume, PromptDefaultVolume));
         _menu.Items.Add(defaultItem);
@@ -149,7 +149,7 @@ internal sealed class TrayApp : ApplicationContext
             () =>
             {
                 Settings.SetNotificationsEnabled(!Settings.NotificationsEnabled);
-                PopulateMenu();
+
             }));
         _menu.Items.Add(new ToolStripSeparator());
 
@@ -157,12 +157,12 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Items.Add(NewItem(text.InstallAutorun, () =>
         {
             Installer.Install();
-            PopulateMenu();
+
         }, enabled: !autorun));
         _menu.Items.Add(NewItem(text.RemoveAutorun, () =>
         {
             Installer.Uninstall();
-            PopulateMenu();
+
         }, enabled: autorun));
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(NewItem(text.Exit, () => ExitThreadCore()));
@@ -196,7 +196,7 @@ internal sealed class TrayApp : ApplicationContext
             _enforcer.ForceToTarget();
             Notify(UiText.Format(text.ResumedBalloonFormat, Settings.TargetPercent), 800);
         }
-        PopulateMenu();
+
     }
 
     private void PromptDeviceVolume(string id, string name, int initialPercent)
@@ -206,7 +206,7 @@ internal sealed class TrayApp : ApplicationContext
 
         Settings.SetDeviceTarget(id, name, dialog.Value);
         _enforcer.ForceToTarget();
-        PopulateMenu();
+
         Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, dialog.Value), 900);
     }
 
@@ -218,7 +218,7 @@ internal sealed class TrayApp : ApplicationContext
         Settings.SetTarget(dialog.Value);
         _icon.Text = UiText.Format(UiText.Current.TrayTooltipFormat, Settings.TargetPercent);
         _enforcer.ForceToTarget();
-        PopulateMenu();
+
         Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, Settings.TargetPercent), 900);
     }
 
