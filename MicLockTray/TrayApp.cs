@@ -30,7 +30,8 @@ internal sealed class TrayApp : ApplicationContext
         _menu = new ContextMenuStrip
         {
             ShowImageMargin = false,
-            ShowCheckMargin = false
+            ShowCheckMargin = false,
+            ShowItemToolTips = false
         };
         ApplyMenuAppearance();
         _menu.Opening += RebuildMenu;
@@ -39,9 +40,10 @@ internal sealed class TrayApp : ApplicationContext
         {
             Icon = _trayIcon,
             Text = text.AppName,
-            ContextMenuStrip = _menu,
             Visible = true
         };
+
+        _icon.MouseUp += OnTrayMouseUp;
 
         _enforcer = new MicEnforcer();
         _enforcer.Enable();
@@ -90,6 +92,50 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Renderer = new ToolStripProfessionalRenderer(new MicColors(_menuDark));
     }
 
+    private void OnTrayMouseUp(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Right || _cleanedUp) return;
+
+        // NotifyIcon's automatic context placement can put nested menus below the
+        // visible desktop when the taskbar auto-hides. Measure the full menu first,
+        // then place it above the cursor within the monitor's usable bounds.
+        ApplyMenuAppearance();
+        PopulateMenu();
+        var cursor = Cursor.Position;
+        var screen = Screen.FromPoint(cursor);
+        var bounds = Rectangle.Intersect(screen.WorkingArea, screen.Bounds);
+        var placement = MenuPlacement.Calculate(cursor, bounds,
+            _menu.GetPreferredSize(Size.Empty), bottomMargin: 24);
+        ConfigureDropDownDirections(placement, bounds);
+        _menu.Show(placement);
+    }
+
+    private void ConfigureDropDownDirections(Point location, Rectangle bounds)
+    {
+        foreach (ToolStripMenuItem item in _menu.Items.OfType<ToolStripMenuItem>())
+            ConfigureDropDownDirection(item, location.X, bounds);
+    }
+
+    private static void ConfigureDropDownDirection(
+        ToolStripMenuItem item, int menuLeft, Rectangle bounds)
+    {
+        if (!item.HasDropDownItems) return;
+
+        // Use a horizontal cascade, never a below-parent direction.
+        // This prevents the first microphone submenu from dropping over an
+        // auto-hidden taskbar. WinForms can still correct the placement at edges.
+        var width = item.DropDown.GetPreferredSize(Size.Empty).Width;
+        var rootWidth = item.Owner?.Width ?? 0;
+        item.DropDownDirection =
+            bounds.Right - (menuLeft + rootWidth) >= width
+                ? ToolStripDropDownDirection.Right
+                : ToolStripDropDownDirection.Left;
+        item.DropDown.ShowItemToolTips = false;
+
+        foreach (var nested in item.DropDownItems.OfType<ToolStripMenuItem>())
+            ConfigureDropDownDirection(nested, menuLeft, bounds);
+    }
+
     private void PopulateMenu()
     {
         var text = UiText.Current;
@@ -102,7 +148,7 @@ internal sealed class TrayApp : ApplicationContext
             devices.Select(device => device.Id), StringComparer.OrdinalIgnoreCase);
         UpdateTooltip(devices);
 
-        _menu.Items.Add(NewItem(text.Microphones, enabled: false));
+        _menu.Items.Add(NewItem(text.AppName, enabled: false));
         if (devices.Length == 0)
             _menu.Items.Add(NewItem(_enforcer.DeviceEnumerationFailed
                 ? text.DetectionFailed : text.NoMicrophones, enabled: false));
@@ -116,7 +162,8 @@ internal sealed class TrayApp : ApplicationContext
 
             // The row only opens a submenu. The submenu has exactly one lock toggle.
             var row = NewItem(DeviceCaption(device.Name, target, locked, device.IsBound));
-            var lockAction = NewItem(locked ? text.UnlockMicrophone : text.LockMicrophone,
+            var lockAction = NewItem(
+                $"{LockMark(!locked)} {(locked ? text.UnlockMicrophone : text.LockMicrophone)}",
                 () =>
                 {
                     bool next = !Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue;
@@ -125,12 +172,14 @@ internal sealed class TrayApp : ApplicationContext
                             ? Settings.TargetPercent : device.CurrentPercent));
                     _enforcer.ForceToTarget();
                 });
+            lockAction.Font = new Font(_menu.Font, FontStyle.Bold);
             row.DropDownItems.Add(lockAction);
+            row.DropDownItems.Add(new ToolStripSeparator());
             row.DropDownItems.Add(NewVolumeControl(target, newValue =>
             {
                 Settings.SetDeviceTarget(device.Id, device.Name, newValue);
                 _enforcer.ForceToTarget();
-                lockAction.Text = text.UnlockMicrophone;
+                lockAction.Text = $"{LockMark(false)} {text.UnlockMicrophone}";
                 row.Text = DeviceCaption(device.Name, newValue, true, device.IsBound);
                 UpdateTooltip(_enforcer.GetDevices());
             }));
@@ -156,14 +205,16 @@ internal sealed class TrayApp : ApplicationContext
                 var row = NewItem(DeviceCaption(device.Name, device.TargetPercent,
                     device.Locked, bound: true));
                 var lockAction = NewItem(
-                    device.Locked ? text.UnlockMicrophone : text.LockMicrophone, () =>
+                    $"{LockMark(!device.Locked)} {(device.Locked ? text.UnlockMicrophone : text.LockMicrophone)}", () =>
                         Settings.SetDeviceLock(device.Id, device.Name, !device.Locked,
                             device.TargetPercent));
+                lockAction.Font = new Font(_menu.Font, FontStyle.Bold);
                 row.DropDownItems.Add(lockAction);
+                row.DropDownItems.Add(new ToolStripSeparator());
                 row.DropDownItems.Add(NewVolumeControl(device.TargetPercent, newValue =>
                 {
                     Settings.SetDeviceTarget(device.Id, device.Name, newValue);
-                    lockAction.Text = text.UnlockMicrophone;
+                    lockAction.Text = $"{LockMark(false)} {text.UnlockMicrophone}";
                     row.Text = DeviceCaption(device.Name, newValue, locked: true, bound: true);
                 }));
                 row.DropDownItems.Add(new ToolStripSeparator());
@@ -182,26 +233,9 @@ internal sealed class TrayApp : ApplicationContext
             Settings.NotificationsEnabled ? text.DisableNotifications : text.EnableNotifications,
             () => Settings.SetNotificationsEnabled(!Settings.NotificationsEnabled)));
 
-        var optionsMenu = NewItem(text.Options);
-        var fallback = NewItem(
-            $"{LockMark(Settings.DefaultLocked)} {text.DefaultFallback} — {Settings.TargetPercent}%");
-        fallback.ToolTipText = text.DefaultFallbackDescription;
-        fallback.DropDownItems.Add(NewItem(
-            Settings.DefaultLocked ? text.UnlockMicrophone : text.LockMicrophone,
-            () =>
-            {
-                Settings.SetDefaultLocked(!Settings.DefaultLocked);
-                _enforcer.ForceToTarget();
-            }));
-        fallback.DropDownItems.Add(NewVolumeControl(Settings.TargetPercent, newValue =>
-        {
-            Settings.SetTarget(newValue);
-            _enforcer.ForceToTarget();
-            fallback.Text = $"{LockMark(Settings.DefaultLocked)} {text.DefaultFallback} — {newValue}%";
-            UpdateTooltip(_enforcer.GetDevices());
-        }));
-        optionsMenu.DropDownItems.Add(fallback);
+        _menu.Items.Add(new ToolStripSeparator());
 
+        // One level for theme choice. Everything else stays visible at the root.
         var themes = NewItem(text.MenuTheme);
         foreach (var option in new[]
         {
@@ -218,19 +252,20 @@ internal sealed class TrayApp : ApplicationContext
                     ApplyMenuAppearance();
                 }));
         }
-        optionsMenu.DropDownItems.Add(themes);
-        optionsMenu.DropDownItems.Add(new ToolStripSeparator());
+        _menu.Items.Add(themes);
 
         bool autorun = Installer.IsInstalled();
-        optionsMenu.DropDownItems.Add(NewItem(
+        _menu.Items.Add(NewItem(
             autorun ? text.RemoveAutorun : text.InstallAutorun,
             () =>
             {
                 if (autorun) Installer.Uninstall();
                 else Installer.Install();
             }));
-        _menu.Items.Add(optionsMenu);
+
         _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(NewItem(text.About, () =>
+            OpenSoundSettings("https://github.com/dillacorn/MicLockTray")));
         _menu.Items.Add(NewItem(text.Exit, () => ExitThreadCore()));
     }
 
@@ -274,7 +309,8 @@ internal sealed class TrayApp : ApplicationContext
         {
             BackColor = _menuBackground,
             ForeColor = _menuText,
-            Enabled = enabled
+            Enabled = enabled,
+            AutoToolTip = false
         };
         if (onClick is not null) item.Click += (_, _) => onClick();
         return item;
