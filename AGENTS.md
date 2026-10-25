@@ -4,7 +4,7 @@ Applies to the entire repository.
 
 ## Project and behavior
 
-- MicLockTray is a Windows .NET 8 / WinForms, x64, single-executable tray utility that enforces a user-selected **default recording-device microphone input** volume through Windows Core Audio callbacks. It is not an output-volume controller.
+- MicLockTray is a Windows .NET 8 / WinForms, x64, single-executable tray utility that enforces selected **microphone input** volumes through Windows Core Audio callbacks, including independent saved device locks and the legacy default-recording-device fallback. It is not an output-volume controller.
 - Preserve event-driven enforcement, pause/resume, selection of the current default capture endpoint, 1–100% target range, single-instance behavior where implemented, and per-user autorun controls. Do not add polling, a service, administrator requirements, telemetry, or unrequested third-party utilities.
 - `MicLockTray/Installer.cs` owns per-user startup registration; localization is embedded (see `MicLockTray/UiText.cs`). Preserve existing user settings and translation fallback when changing UI text.
 - `MicLockTray/MicLockTray.csproj` is the Windows build source. The `.github/workflows/build.yml` workflow checks a Release build and win-x64 self-contained single-file publish output; **a passing build is not a published GitHub Release**.
