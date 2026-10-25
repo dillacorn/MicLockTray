@@ -67,7 +67,7 @@ internal static class UiText
         ThemeSystem = "Follow Windows",
         ThemeLight = "Light",
         ThemeDark = "Dark",
-        AudioSettingsErrorFormat = "Could not open sound settings:\\n{0}",
+        AudioSettingsErrorFormat = "Could not open sound settings:\n{0}",
 
         SetMicrophoneVolume = "Set microphone volume…",
         NoMicrophones = "No active microphones",
@@ -118,7 +118,7 @@ internal static class UiText
         ThemeSystem = "跟随 Windows",
         ThemeLight = "浅色",
         ThemeDark = "深色",
-        AudioSettingsErrorFormat = "无法打开声音设置：\\n{0}",
+        AudioSettingsErrorFormat = "无法打开声音设置：\n{0}",
 
         SetMicrophoneVolume = "设置麦克风音量…",
         NoMicrophones = "没有活动的麦克风",
