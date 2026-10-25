@@ -1,5 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace MicLockTray;
@@ -7,13 +11,12 @@ namespace MicLockTray;
 internal sealed class TrayApp : ApplicationContext
 {
     private const string IconFileName = "Papirus-Team-Papirus-Devices-Audio-input-microphone.ico";
+    private static readonly Color MenuBackground = Color.FromArgb(211, 216, 222);
+    private static readonly Color MenuText = Color.FromArgb(32, 42, 54);
 
     private readonly NotifyIcon _icon;
-    private readonly System.Drawing.Icon _trayIcon;
-    private readonly ToolStripMenuItem _toggleItem;
-    private readonly ToolStripMenuItem _installItem;
-    private readonly ToolStripMenuItem _uninstallItem;
-    private readonly ToolStripMenuItem _setTargetItem;
+    private readonly Icon _trayIcon;
+    private readonly ContextMenuStrip _menu;
     private readonly MicEnforcer _enforcer;
     private bool _cleanedUp;
 
@@ -21,54 +24,212 @@ internal sealed class TrayApp : ApplicationContext
     {
         var text = UiText.Current;
         _trayIcon = LoadTrayIcon();
+        _menu = new ContextMenuStrip
+        {
+            BackColor = MenuBackground,
+            ForeColor = MenuText,
+            Renderer = new ToolStripProfessionalRenderer(new MicColors()),
+            ShowImageMargin = false,
+            ShowCheckMargin = false
+        };
+        _menu.Opening += RebuildMenu;
 
         _icon = new NotifyIcon
         {
             Icon = _trayIcon,
             Text = UiText.Format(text.TrayTooltipFormat, Settings.TargetPercent),
-            Visible = true,
-            ContextMenuStrip = new ContextMenuStrip()
+            ContextMenuStrip = _menu,
+            Visible = true
         };
 
-        _toggleItem = new ToolStripMenuItem(text.PauseEnforcement);
-        _setTargetItem = new ToolStripMenuItem(text.SetTargetVolume);
-        _icon.ContextMenuStrip!.Items.Add(_toggleItem);
-        _icon.ContextMenuStrip.Items.Add(_setTargetItem);
-        _icon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
-
-        _installItem = new ToolStripMenuItem(text.InstallAutorun) { Enabled = !Installer.IsInstalled() };
-        _uninstallItem = new ToolStripMenuItem(text.RemoveAutorun) { Enabled = Installer.IsInstalled() };
-        _icon.ContextMenuStrip.Items.Add(_installItem);
-        _icon.ContextMenuStrip.Items.Add(_uninstallItem);
-        _icon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
-
-        var exitItem = new ToolStripMenuItem(text.Exit);
-        _icon.ContextMenuStrip.Items.Add(exitItem);
-
-        _enforcer = new MicEnforcer(() => Settings.TargetPercent / 100f);
+        _enforcer = new MicEnforcer();
         _enforcer.Enable();
         _enforcer.ForceToTarget();
+        PopulateMenu();
 
-        _toggleItem.Click += (_, _) => ToggleEnforcement();
-        _setTargetItem.Click += (_, _) => PromptAndSetTarget();
-        _installItem.Click += (_, _) => { Installer.Install(); RefreshInstallMenu(); };
-        _uninstallItem.Click += (_, _) => { Installer.Uninstall(); RefreshInstallMenu(); };
-        exitItem.Click += (_, _) => ExitThreadCore();
-
-        try
+        // The tray overflow itself is controlled by Windows. A balloon is the
+        // supported way to point first-time users toward the app's icon.
+        if (!Settings.OnboardingShown)
         {
-            _icon.ShowBalloonTip(
-                1200,
-                text.AppName,
-                UiText.Format(text.StartupBalloonFormat, Settings.TargetPercent),
-                ToolTipIcon.Info);
+            Settings.SetOnboardingShown();
+            Notify(text.FirstLaunchHint, 5000);
         }
-        catch { }
+        else
+        {
+            Notify(UiText.Format(text.StartupBalloonFormat, Settings.TargetPercent), 1200);
+        }
 
         Application.ApplicationExit += (_, _) => Cleanup();
     }
 
-    private static System.Drawing.Icon LoadTrayIcon()
+    private void RebuildMenu(object? sender, CancelEventArgs e)
+    {
+        PopulateMenu();
+    }
+
+    private void PopulateMenu()
+    {
+        var text = UiText.Current;
+        var oldItems = _menu.Items.Cast<ToolStripItem>().ToArray();
+        _menu.Items.Clear();
+        foreach (var item in oldItems) item.Dispose();
+
+        var devices = _enforcer.GetDevices();
+        var activeIds = new HashSet<string>(devices.Select(d => d.Id), StringComparer.OrdinalIgnoreCase);
+
+        var heading = new ToolStripMenuItem(text.Microphones) { Enabled = false };
+        _menu.Items.Add(heading);
+
+        if (devices.Length == 0)
+            _menu.Items.Add(new ToolStripMenuItem(text.NoMicrophones) { Enabled = false });
+
+        foreach (var device in devices)
+        {
+            var saved = Settings.GetDevice(device.Id);
+            bool locked = saved?.Locked ?? (device.IsDefault && Settings.DefaultLocked);
+            int target = saved?.TargetPercent ?? Settings.TargetPercent;
+            var item = NewItem($"{LockMark(locked)} {device.Name} — {target}%");
+            item.ToolTipText = device.Name;
+            item.DropDownItems.Add(NewItem(locked ? text.UnlockMicrophone : text.LockMicrophone,
+                () =>
+                {
+                    Settings.SetDeviceLock(device.Id, device.Name, !locked,
+                        saved?.TargetPercent ?? (device.IsDefault ? Settings.TargetPercent : device.CurrentPercent));
+                    _enforcer.ForceToTarget();
+                    PopulateMenu();
+                }));
+            item.DropDownItems.Add(NewItem(text.SetTargetVolume, () =>
+                PromptDeviceVolume(device.Id, device.Name, saved?.TargetPercent ?? device.CurrentPercent)));
+            _menu.Items.Add(item);
+        }
+
+        var offline = Settings.GetSavedDevices().Where(device => !activeIds.Contains(device.Id)).ToArray();
+        if (offline.Length > 0)
+        {
+            var offlineMenu = NewItem(UiText.Format(text.DisconnectedMicrophonesFormat, offline.Length));
+            foreach (var device in offline)
+            {
+                var item = NewItem($"{LockMark(device.Locked)} {device.Name} — {device.TargetPercent}%");
+                item.DropDownItems.Add(NewItem(device.Locked ? text.UnlockMicrophone : text.LockMicrophone,
+                    () =>
+                    {
+                        Settings.SetDeviceLock(device.Id, device.Name, !device.Locked, device.TargetPercent);
+                        PopulateMenu();
+                    }));
+                item.DropDownItems.Add(NewItem(text.SetTargetVolume, () =>
+                    PromptDeviceVolume(device.Id, device.Name, device.TargetPercent)));
+                item.DropDownItems.Add(new ToolStripSeparator());
+                item.DropDownItems.Add(NewItem(text.ForgetMicrophone, () =>
+                {
+                    Settings.ForgetDevice(device.Id);
+                    PopulateMenu();
+                }));
+                offlineMenu.DropDownItems.Add(item);
+            }
+            _menu.Items.Add(offlineMenu);
+        }
+
+        var defaultItem = NewItem(
+            $"{LockMark(Settings.DefaultLocked)} {text.DefaultFallback} — {Settings.TargetPercent}%");
+        defaultItem.ToolTipText = text.DefaultFallbackDescription;
+        defaultItem.DropDownItems.Add(NewItem(
+            Settings.DefaultLocked ? text.UnlockMicrophone : text.LockMicrophone, () =>
+            {
+                Settings.SetDefaultLocked(!Settings.DefaultLocked);
+                _enforcer.ForceToTarget();
+                PopulateMenu();
+            }));
+        defaultItem.DropDownItems.Add(NewItem(text.SetTargetVolume, PromptDefaultVolume));
+        _menu.Items.Add(defaultItem);
+
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(NewItem(_enforcer.IsEnabled ? text.PauseEnforcement : text.ResumeEnforcement,
+            ToggleEnforcement));
+        _menu.Items.Add(NewItem(Settings.NotificationsEnabled ? text.DisableNotifications : text.EnableNotifications,
+            () =>
+            {
+                Settings.SetNotificationsEnabled(!Settings.NotificationsEnabled);
+                PopulateMenu();
+            }));
+        _menu.Items.Add(new ToolStripSeparator());
+
+        bool autorun = Installer.IsInstalled();
+        _menu.Items.Add(NewItem(text.InstallAutorun, () =>
+        {
+            Installer.Install();
+            PopulateMenu();
+        }, enabled: !autorun));
+        _menu.Items.Add(NewItem(text.RemoveAutorun, () =>
+        {
+            Installer.Uninstall();
+            PopulateMenu();
+        }, enabled: autorun));
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(NewItem(text.Exit, () => ExitThreadCore()));
+    }
+
+    private static ToolStripMenuItem NewItem(string label, Action? onClick = null, bool enabled = true)
+    {
+        var item = new ToolStripMenuItem(label)
+        {
+            BackColor = MenuBackground,
+            ForeColor = MenuText,
+            Enabled = enabled
+        };
+        if (onClick is not null) item.Click += (_, _) => onClick();
+        return item;
+    }
+
+    private static string LockMark(bool locked) => locked ? "🔒" : "🔓";
+
+    private void ToggleEnforcement()
+    {
+        var text = UiText.Current;
+        if (_enforcer.IsEnabled)
+        {
+            _enforcer.Disable();
+            Notify(text.PausedBalloon, 800);
+        }
+        else
+        {
+            _enforcer.Enable();
+            _enforcer.ForceToTarget();
+            Notify(UiText.Format(text.ResumedBalloonFormat, Settings.TargetPercent), 800);
+        }
+        PopulateMenu();
+    }
+
+    private void PromptDeviceVolume(string id, string name, int initialPercent)
+    {
+        using var dialog = new VolumePrompt(initialPercent, name);
+        if (dialog.ShowDialog() != DialogResult.OK) return;
+
+        Settings.SetDeviceTarget(id, name, dialog.Value);
+        _enforcer.ForceToTarget();
+        PopulateMenu();
+        Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, dialog.Value), 900);
+    }
+
+    private void PromptDefaultVolume()
+    {
+        using var dialog = new VolumePrompt(Settings.TargetPercent);
+        if (dialog.ShowDialog() != DialogResult.OK) return;
+
+        Settings.SetTarget(dialog.Value);
+        _icon.Text = UiText.Format(UiText.Current.TrayTooltipFormat, Settings.TargetPercent);
+        _enforcer.ForceToTarget();
+        PopulateMenu();
+        Notify(UiText.Format(UiText.Current.TargetSetBalloonFormat, Settings.TargetPercent), 900);
+    }
+
+    private void Notify(string message, int duration)
+    {
+        if (!Settings.NotificationsEnabled) return;
+        try { _icon.ShowBalloonTip(duration, UiText.Current.AppName, message, ToolTipIcon.Info); }
+        catch { }
+    }
+
+    private static Icon LoadTrayIcon()
     {
         try
         {
@@ -77,86 +238,25 @@ internal sealed class TrayApp : ApplicationContext
             var baseDirectoryIcon = Path.Combine(AppContext.BaseDirectory, IconFileName);
             var executableDirectoryIcon = Path.Combine(exeDirectory, IconFileName);
 
-            if (File.Exists(baseDirectoryIcon)) return new System.Drawing.Icon(baseDirectoryIcon);
-            if (File.Exists(executableDirectoryIcon)) return new System.Drawing.Icon(executableDirectoryIcon);
+            if (File.Exists(baseDirectoryIcon)) return new Icon(baseDirectoryIcon);
+            if (File.Exists(executableDirectoryIcon)) return new Icon(executableDirectoryIcon);
 
-            return System.Drawing.Icon.ExtractAssociatedIcon(exePath) ?? System.Drawing.SystemIcons.Application;
+            return Icon.ExtractAssociatedIcon(exePath) ?? SystemIcons.Application;
         }
         catch
         {
-            try
-            {
-                return System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath)
-                    ?? System.Drawing.SystemIcons.Application;
-            }
-            catch
-            {
-                return System.Drawing.SystemIcons.Application;
-            }
+            try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application; }
+            catch { return SystemIcons.Application; }
         }
-    }
-
-    private void RefreshInstallMenu()
-    {
-        bool installed = Installer.IsInstalled();
-        _installItem.Enabled = !installed;
-        _uninstallItem.Enabled = installed;
-    }
-
-    private void ToggleEnforcement()
-    {
-        var text = UiText.Current;
-
-        if (_enforcer.IsEnabled)
-        {
-            _enforcer.Disable();
-            _toggleItem.Text = text.ResumeEnforcement;
-            try { _icon.ShowBalloonTip(800, text.AppName, text.PausedBalloon, ToolTipIcon.None); } catch { }
-            return;
-        }
-
-        _enforcer.Enable();
-        _enforcer.ForceToTarget();
-        _toggleItem.Text = text.PauseEnforcement;
-        try
-        {
-            _icon.ShowBalloonTip(
-                800,
-                text.AppName,
-                UiText.Format(text.ResumedBalloonFormat, Settings.TargetPercent),
-                ToolTipIcon.Info);
-        }
-        catch { }
-    }
-
-    private void PromptAndSetTarget()
-    {
-        var text = UiText.Current;
-        using var dialog = new VolumePrompt(Settings.TargetPercent);
-        if (dialog.ShowDialog() != DialogResult.OK) return;
-
-        Settings.SetTarget(dialog.Value);
-        _icon.Text = UiText.Format(text.TrayTooltipFormat, Settings.TargetPercent);
-        _enforcer.ForceToTarget();
-        try
-        {
-            _icon.ShowBalloonTip(
-                900,
-                text.AppName,
-                UiText.Format(text.TargetSetBalloonFormat, Settings.TargetPercent),
-                ToolTipIcon.Info);
-        }
-        catch { }
     }
 
     private void Cleanup()
     {
         if (_cleanedUp) return;
         _cleanedUp = true;
-
         try { _enforcer.Dispose(); } catch { }
         try { _icon.Visible = false; } catch { }
-        try { _icon.ContextMenuStrip?.Dispose(); } catch { }
+        try { _menu.Dispose(); } catch { }
         try { _icon.Dispose(); } catch { }
         try { _trayIcon.Dispose(); } catch { }
     }
@@ -165,6 +265,25 @@ internal sealed class TrayApp : ApplicationContext
     {
         Cleanup();
         base.ExitThreadCore();
+    }
+
+    private sealed class MicColors : ProfessionalColorTable
+    {
+        private static readonly Color Selected = Color.FromArgb(170, 184, 198);
+        public override Color ToolStripDropDownBackground => MenuBackground;
+        public override Color ImageMarginGradientBegin => MenuBackground;
+        public override Color ImageMarginGradientMiddle => MenuBackground;
+        public override Color ImageMarginGradientEnd => MenuBackground;
+        public override Color MenuBorder => Color.FromArgb(140, 153, 166);
+        public override Color MenuItemBorder => Color.FromArgb(130, 145, 160);
+        public override Color MenuItemSelected => Selected;
+        public override Color MenuItemSelectedGradientBegin => Selected;
+        public override Color MenuItemSelectedGradientEnd => Selected;
+        public override Color MenuItemPressedGradientBegin => Selected;
+        public override Color MenuItemPressedGradientMiddle => Selected;
+        public override Color MenuItemPressedGradientEnd => Selected;
+        public override Color SeparatorDark => Color.FromArgb(158, 167, 178);
+        public override Color SeparatorLight => MenuBackground;
     }
 }
 
@@ -176,11 +295,11 @@ internal sealed class VolumePrompt : Form
 
     public int Value => (int)_volumeInput.Value;
 
-    public VolumePrompt(int current)
+    public VolumePrompt(int current, string? microphoneName = null)
     {
         var text = UiText.Current;
 
-        Text = text.VolumeDialogTitle;
+        Text = microphoneName is null ? text.VolumeDialogTitle : $"{text.VolumeDialogTitle} — {microphoneName}";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterScreen;
         MinimizeBox = false;
