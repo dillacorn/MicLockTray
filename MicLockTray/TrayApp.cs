@@ -152,21 +152,29 @@ internal sealed class TrayApp : ApplicationContext
             int target = saved?.TargetPercent ??
                 (locked ? Settings.TargetPercent : device.CurrentPercent);
 
-            // The row only opens a submenu. The submenu has exactly one lock toggle.
             var row = NewItem(DeviceCaption(device.Name, target, locked, device.IsBound));
             var lockAction = NewItem(
                 $"{LockMark(!locked)} {(locked ? text.UnlockMicrophone : text.LockMicrophone)}",
-                () =>
-                {
-                    bool next = !Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue;
-                    Settings.SetDeviceLock(device.Id, device.Name, next,
-                        saved?.TargetPercent ?? (device.IsDefault
-                            ? Settings.TargetPercent : device.CurrentPercent));
-                    _enforcer.ForceToTarget();
-                });
+                keepOpen: true);
             lockAction.Font = new Font(_menu.Font, FontStyle.Bold);
-            row.DropDownItems.Add(lockAction);
-            row.DropDownItems.Add(new ToolStripSeparator());
+            lockAction.Click += (_, _) =>
+            {
+                bool next = !Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue;
+                int initialTarget = Settings.GetDevice(device.Id)?.TargetPercent ??
+                    (device.IsDefault ? Settings.TargetPercent : device.CurrentPercent);
+                Settings.SetDeviceLock(device.Id, device.Name, next, initialTarget);
+                _enforcer.ForceToTarget();
+
+                // Update the same open submenu so the new state is unambiguous.
+                bool nowLocked = Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue;
+                int actualTarget = Settings.GetDevice(device.Id)?.TargetPercent ?? initialTarget;
+                lockAction.Text =
+                    $"{LockMark(!nowLocked)} {(nowLocked ? text.UnlockMicrophone : text.LockMicrophone)}";
+                row.Text = DeviceCaption(device.Name, actualTarget, nowLocked, device.IsBound);
+                UpdateTooltip(_enforcer.GetDevices());
+            };
+
+            // Volume and properties are the most frequently used controls.
             row.DropDownItems.Add(NewVolumeControl(target, newValue =>
             {
                 Settings.SetDeviceTarget(device.Id, device.Name, newValue);
@@ -175,14 +183,14 @@ internal sealed class TrayApp : ApplicationContext
                 row.Text = DeviceCaption(device.Name, newValue, true, device.IsBound);
                 UpdateTooltip(_enforcer.GetDevices());
             }));
-
-            row.DropDownItems.Add(new ToolStripSeparator());
             row.DropDownItems.Add(NewItem(text.MicrophoneProperties, () =>
                 OpenExternalTarget("ms-settings:sound-properties?endpointId=" +
                     Uri.EscapeDataString(device.Id))));
             // Windows does not expose a reliable direct link to a specific legacy
             // recording-device dialog. This opens its containing Recording tab.
             row.DropDownItems.Add(NewItem(text.ClassicSoundPanel, OpenClassicRecordingPanel));
+            row.DropDownItems.Add(new ToolStripSeparator());
+            row.DropDownItems.Add(lockAction);
             _menu.Items.Add(row);
         }
 
@@ -197,21 +205,30 @@ internal sealed class TrayApp : ApplicationContext
                 var row = NewItem(DeviceCaption(device.Name, device.TargetPercent,
                     device.Locked, bound: true));
                 var lockAction = NewItem(
-                    $"{LockMark(!device.Locked)} {(device.Locked ? text.UnlockMicrophone : text.LockMicrophone)}", () =>
-                        Settings.SetDeviceLock(device.Id, device.Name, !device.Locked,
-                            device.TargetPercent));
+                    $"{LockMark(!device.Locked)} {(device.Locked ? text.UnlockMicrophone : text.LockMicrophone)}",
+                    keepOpen: true);
                 lockAction.Font = new Font(_menu.Font, FontStyle.Bold);
-                row.DropDownItems.Add(lockAction);
-                row.DropDownItems.Add(new ToolStripSeparator());
+                lockAction.Click += (_, _) =>
+                {
+                    bool next = Settings.GetDevice(device.Id)?.Locked != true;
+                    Settings.SetDeviceLock(device.Id, device.Name, next, device.TargetPercent);
+                    var saved = Settings.GetDevice(device.Id)!;
+                    lockAction.Text =
+                        $"{LockMark(!saved.Locked)} {(saved.Locked ? text.UnlockMicrophone : text.LockMicrophone)}";
+                    row.Text = DeviceCaption(device.Name, saved.TargetPercent,
+                        saved.Locked, bound: true);
+                };
+
                 row.DropDownItems.Add(NewVolumeControl(device.TargetPercent, newValue =>
                 {
                     Settings.SetDeviceTarget(device.Id, device.Name, newValue);
                     lockAction.Text = $"{LockMark(false)} {text.UnlockMicrophone}";
                     row.Text = DeviceCaption(device.Name, newValue, locked: true, bound: true);
                 }));
-                row.DropDownItems.Add(new ToolStripSeparator());
                 row.DropDownItems.Add(NewItem(text.ForgetMicrophone, () =>
                     Settings.ForgetDevice(device.Id)));
+                row.DropDownItems.Add(new ToolStripSeparator());
+                row.DropDownItems.Add(lockAction);
                 offlineMenu.DropDownItems.Add(row);
             }
             _menu.Items.Add(offlineMenu);
@@ -295,9 +312,12 @@ internal sealed class TrayApp : ApplicationContext
         _icon.Text = UiText.Format(text.TrayTooltipFormat, lockedCount);
     }
 
-    private ToolStripMenuItem NewItem(string label, Action? onClick = null, bool enabled = true)
+    private ToolStripMenuItem NewItem(string label, Action? onClick = null,
+        bool enabled = true, bool keepOpen = false)
     {
-        var item = new ToolStripMenuItem(label)
+        var item = keepOpen
+            ? new PersistentLockMenuItem { Text = label }
+            : new ToolStripMenuItem(label);
         {
             BackColor = _menuBackground,
             ForeColor = _menuText,
@@ -406,7 +426,7 @@ internal sealed class TrayApp : ApplicationContext
 
         public MicColors(bool dark)
         {
-            _background = dark ? Color.FromArgb(39, 44, 51) : Color.FromArgb(211, 216, 222);
+            _background = dark ? Color.FromArgb(27, 27, 27) : Color.FromArgb(211, 216, 222);
             _selected = dark ? Color.FromArgb(53, 55, 58) : Color.FromArgb(170, 184, 198);
             _border = dark ? Color.FromArgb(66, 66, 66) : Color.FromArgb(140, 153, 166);
             _separator = dark ? Color.FromArgb(69, 69, 69) : Color.FromArgb(158, 167, 178);
