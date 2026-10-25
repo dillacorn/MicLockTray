@@ -21,6 +21,7 @@ internal static class UiText
         public string EnableNotifications { get; init; } = "";
         public string FirstLaunchHint { get; init; } = "";
         public string TrayTooltipFormat { get; init; } = "";
+        public string PausedTooltip { get; init; } = "";
         public string PauseEnforcement { get; init; } = "";
         public string ResumeEnforcement { get; init; } = "";
         public string SetTargetVolume { get; init; } = "";
@@ -57,7 +58,8 @@ internal static class UiText
         DisableNotifications = "Disable notifications",
         EnableNotifications = "Enable notifications",
         FirstLaunchHint = "↑ Right-click me to choose microphones and locked volume levels.",
-        TrayTooltipFormat = "MicLockTray: target {0}%",
+        TrayTooltipFormat = "MicLockTray: {0} microphone(s) locked",
+        PausedTooltip = "MicLockTray: paused",
         PauseEnforcement = "Pause enforcement",
         ResumeEnforcement = "Resume enforcement",
         SetTargetVolume = "Set target volume…",
@@ -95,7 +97,8 @@ internal static class UiText
         DisableNotifications = "禁用通知",
         EnableNotifications = "启用通知",
         FirstLaunchHint = "↑ 右键点击此图标，选择要锁定的麦克风和音量。",
-        TrayTooltipFormat = "MicLockTray：目标 {0}%",
+        TrayTooltipFormat = "MicLockTray：已锁定 {0} 个麦克风",
+        PausedTooltip = "MicLockTray：已暂停",
         PauseEnforcement = "暂停锁定",
         ResumeEnforcement = "恢复锁定",
         SetTargetVolume = "设置目标音量…",
