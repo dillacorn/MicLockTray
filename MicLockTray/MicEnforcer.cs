@@ -18,7 +18,7 @@ internal sealed class MicEnforcer : IDisposable
         CoreAudio.ERole.eCommunications
     };
 
-    internal sealed record DeviceInfo(string Id, string Name, int CurrentPercent, bool IsDefault);
+    internal sealed record DeviceInfo(string Id, string Name, int CurrentPercent, bool IsDefault, bool IsBound);
 
     private sealed class Binding
     {
@@ -117,6 +117,14 @@ internal sealed class MicEnforcer : IDisposable
     }
 
     public bool IsEnabled { get { lock (_gate) return _enabled && !_disposed; } }
+    private bool _enumerationFailed;
+    public bool DeviceEnumerationFailed { get { lock (_gate) return _enumerationFailed; } }
+
+    private void RecordEnumerationFailure(bool failed)
+    {
+        lock (_gate) _enumerationFailed = failed;
+    }
+
 
     public void Enable()
     {
@@ -177,32 +185,9 @@ internal sealed class MicEnforcer : IDisposable
         }
     }
 
-    public DeviceInfo[] GetDevices()
-    {
-        (Binding binding, bool isDefault)[] bindings;
-        lock (_gate)
-        {
-            bindings = _bindings.Values.Select(binding =>
-                (binding, _defaultIds.Contains(binding.Id))).ToArray();
-        }
-
-        if (!IsEnabled)
-            return GetDevicesWhilePaused();
-
-        return bindings.Select(item =>
-        {
-            int volume = Settings.EffectiveTarget(item.binding.Id, item.isDefault) ?? Settings.TargetPercent;
-            try
-            {
-                if (item.binding.Endpoint.GetMasterVolumeLevelScalar(out float scalar) == 0)
-                    volume = Math.Clamp((int)Math.Round(scalar * 100), 0, 100);
-            }
-            catch (Exception ex) { Debug.WriteLine($"MicLockTray device volume read failed: {ex}"); }
-
-            return new DeviceInfo(item.binding.Id, item.binding.Name, volume, item.isDefault);
-        }).OrderByDescending(device => device.IsDefault)
-          .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
-    }
+    // Enumerate for the menu even if a device's volume callback could not bind.
+    // This runs only on menu open, not as enforcement polling.
+    public DeviceInfo[] GetDevices() => GetDevicesWhilePaused();
 
     private DeviceInfo[] GetDevicesWhilePaused()
     {
@@ -220,10 +205,22 @@ internal sealed class MicEnforcer : IDisposable
                 if (id is not null) defaults.Add(id);
             }
 
-            if (_enumerator.EnumAudioEndpoints(CoreAudio.EDataFlow.eCapture,
-                    CoreAudio.ActiveDeviceState, out var collection) != 0 || collection is null)
+            int hr = _enumerator.EnumAudioEndpoints(CoreAudio.EDataFlow.eCapture,
+                    CoreAudio.ActiveDeviceState, out var collection);
+            if (hr != 0 || collection is null)
+            {
+                Debug.WriteLine($"MicLockTray active capture enumeration failed: 0x{hr:X8}");
+                RecordEnumerationFailure(true);
                 return Array.Empty<DeviceInfo>();
-            if (collection.GetCount(out uint count) != 0) return Array.Empty<DeviceInfo>();
+            }
+            hr = collection.GetCount(out uint count);
+            if (hr != 0)
+            {
+                Debug.WriteLine($"MicLockTray capture count failed: 0x{hr:X8}");
+                RecordEnumerationFailure(true);
+                return Array.Empty<DeviceInfo>();
+            }
+            RecordEnumerationFailure(false);
 
             for (uint i = 0; i < count; i++)
             {
@@ -242,13 +239,16 @@ internal sealed class MicEnforcer : IDisposable
                 }
                 catch (Exception ex) { Debug.WriteLine($"MicLockTray paused device read failed: {ex}"); }
 
+                bool bound;
+                lock (_gate) bound = _enabled && !_disposed && _bindings.ContainsKey(id);
                 devices.Add(new DeviceInfo(id, CoreAudio.GetFriendlyName(device, id),
-                    current, defaults.Contains(id)));
+                    current, defaults.Contains(id), bound));
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"MicLockTray paused device enumeration failed: {ex}");
+            RecordEnumerationFailure(true);
+            Debug.WriteLine($"MicLockTray active device enumeration failed: {ex}");
         }
 
         return devices.OrderByDescending(device => device.IsDefault)
