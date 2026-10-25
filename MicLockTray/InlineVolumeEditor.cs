@@ -20,6 +20,7 @@ internal sealed class InlineVolumeEditor : UserControl
         MinimumSize = Size;
         Margin = Padding.Empty;
         Padding = Padding.Empty;
+        Font = SystemFonts.MenuFont;
         BackColor = dark ? Color.FromArgb(27, 27, 27) : Color.FromArgb(211, 216, 222);
         ForeColor = dark ? Color.FromArgb(233, 237, 241) : Color.FromArgb(32, 42, 54);
 
