@@ -9,6 +9,7 @@ internal static class UiText
     {
         public string AppName { get; init; } = "";
         public string Microphones { get; init; } = "";
+        public string SetMicrophoneVolume { get; init; } = "";
         public string NoMicrophones { get; init; } = "";
         public string DisconnectedMicrophonesFormat { get; init; } = "";
         public string LockMicrophone { get; init; } = "";
@@ -45,6 +46,7 @@ internal static class UiText
     {
         AppName = "MicLockTray",
         Microphones = "Microphones",
+        SetMicrophoneVolume = "Set microphone volume…",
         NoMicrophones = "No active microphones",
         DisconnectedMicrophonesFormat = "Disconnected microphones ({0})",
         LockMicrophone = "Lock microphone",
@@ -82,6 +84,7 @@ internal static class UiText
     {
         AppName = "MicLockTray",
         Microphones = "麦克风",
+        SetMicrophoneVolume = "设置麦克风音量…",
         NoMicrophones = "没有活动的麦克风",
         DisconnectedMicrophonesFormat = "已断开的麦克风 ({0})",
         LockMicrophone = "锁定麦克风",
