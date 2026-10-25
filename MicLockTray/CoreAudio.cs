@@ -35,6 +35,59 @@ internal static class CoreAudio
         public uint propertyId;
     }
 
+
+    private static readonly Guid DeviceFriendlyNameKey = new("A45C254E-DF1C-4EFD-8020-67D146A850E0");
+    internal static readonly Guid EndpointVolumeGuid = new("5CDF2C82-841E-4546-9722-0CF74078229A");
+    internal const int ActiveDeviceState = 1;
+
+    public static string? GetDeviceId(IMMDevice device)
+    {
+        if (device.GetId(out var pointer) != 0) return null;
+        try { return Marshal.PtrToStringUni(pointer); }
+        finally { Marshal.FreeCoTaskMem(pointer); }
+    }
+
+    public static string GetFriendlyName(IMMDevice device, string id)
+    {
+        IntPtr pointer = IntPtr.Zero;
+        try
+        {
+            if (device.OpenPropertyStore(0, out pointer) != 0 || pointer == IntPtr.Zero)
+                return id;
+
+            var store = (IPropertyStore)Marshal.GetObjectForIUnknown(pointer);
+            var key = new PropertyKey { formatId = DeviceFriendlyNameKey, propertyId = 14 };
+            if (store.GetValue(ref key, out var value) != 0) return id;
+            try
+            {
+                return value.variantType == 31 && value.stringPointer != IntPtr.Zero
+                    ? Marshal.PtrToStringUni(value.stringPointer) ?? id
+                    : id;
+            }
+            finally { _ = PropVariantClear(ref value); }
+        }
+        catch { return id; }
+        finally { if (pointer != IntPtr.Zero) _ = Marshal.Release(pointer); }
+    }
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IPropertyStore
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int GetAt(uint index, out PropertyKey key);
+        [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    public struct PropVariant
+    {
+        [FieldOffset(0)] public ushort variantType;
+        [FieldOffset(8)] public IntPtr stringPointer;
+    }
+
+    [DllImport("ole32.dll")]
+    private static extern int PropVariantClear(ref PropVariant value);
+
     [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-C0F926C399A4"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMMDeviceCollection
     {
