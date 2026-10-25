@@ -15,7 +15,7 @@ A lightweight Windows tray app that keeps your microphone input volume where you
 
 ## Usage
 
-Run `MicLockTray.exe`, then **right-click the tray icon**. Hover over a microphone to change its lock or volume. More controls are under **Options**. Disconnected microphones retain their saved settings.
+Run `MicLockTray.exe`, **right-click its tray icon**, and hover over a microphone to lock/unlock it, adjust the volume, or open its properties. Other settings and the GitHub About link are in the main menu. Disconnected microphones keep their saved settings.
 
 ## About
 
