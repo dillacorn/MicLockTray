@@ -178,7 +178,7 @@ internal sealed class TrayApp : ApplicationContext
 
             row.DropDownItems.Add(new ToolStripSeparator());
             row.DropDownItems.Add(NewItem(text.MicrophoneProperties, () =>
-                OpenSoundSettings("ms-settings:sound-properties?endpointId=" +
+                OpenExternalTarget("ms-settings:sound-properties?endpointId=" +
                     Uri.EscapeDataString(device.Id))));
             // Windows does not expose a reliable direct link to a specific legacy
             // recording-device dialog. This opens its containing Recording tab.
@@ -257,7 +257,7 @@ internal sealed class TrayApp : ApplicationContext
 
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(NewItem(text.About, () =>
-            OpenSoundSettings("https://github.com/dillacorn/MicLockTray")));
+            OpenExternalTarget("https://github.com/dillacorn/MicLockTray")));
         _menu.Items.Add(NewItem(text.Exit, () => ExitThreadCore()));
     }
 
@@ -335,16 +335,16 @@ internal sealed class TrayApp : ApplicationContext
             startInfo.ArgumentList.Add("mmsys.cpl,,1");
             Process.Start(startInfo);
         }
-        catch (Exception ex) { ReportSoundSettingsError(ex); }
+        catch (Exception ex) { ReportOpenError(ex); }
     }
 
-    private void OpenSoundSettings(string uri)
+    private void OpenExternalTarget(string uri)
     {
         try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); }
-        catch (Exception ex) { ReportSoundSettingsError(ex); }
+        catch (Exception ex) { ReportOpenError(ex); }
     }
 
-    private static void ReportSoundSettingsError(Exception ex)
+    private static void ReportOpenError(Exception ex)
     {
         var text = UiText.Current;
         MessageBox.Show(UiText.Format(text.AudioSettingsErrorFormat, ex.Message),
