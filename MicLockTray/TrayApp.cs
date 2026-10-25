@@ -155,8 +155,7 @@ internal sealed class TrayApp : ApplicationContext
         }
         item.DropDown.Closing += (_, e) =>
         {
-            e.Cancel = e.CloseReason == ToolStripDropDownCloseReason.AppFocusChange
-                && _menu.Visible;
+            e.Cancel = PersistentLockMenuItem.KeepFlyoutOpen(e.CloseReason, _menu.Visible);
         };
         item.DropDownOpening += (_, _) =>
         {
