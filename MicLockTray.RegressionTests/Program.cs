@@ -83,7 +83,23 @@ internal static class Program
             Settings.SetDeviceTarget("HEADSET", "Headset microphone", 500);
             Equal(100, Settings.EffectiveTarget("HEADSET", false), "volume clamps above 100%");
 
-            Console.WriteLine($"PASS: {_assertions} settings regression assertions");
+            // Match the native Core Audio ABI: these methods take LPCGUID, not a
+            // by-value GUID. Reflection verifies the declaration without hardware.
+            foreach (string methodName in new[]
+            {
+                "SetMasterVolumeLevel", "SetMasterVolumeLevelScalar",
+                "SetChannelVolumeLevel", "SetChannelVolumeLevelScalar",
+                "SetMute", "VolumeStepUp", "VolumeStepDown"
+            })
+            {
+                var method = typeof(CoreAudio.IAudioEndpointVolume).GetMethod(methodName)
+                    ?? throw new InvalidOperationException("Missing Core Audio method: " + methodName);
+                var parameter = method.GetParameters().Last();
+                Equal(typeof(Guid).MakeByRefType(), parameter.ParameterType,
+                    methodName + " must pass the event-context GUID by reference");
+            }
+
+            Console.WriteLine($"PASS: {_assertions} settings and interop regression assertions");
         }
         finally
         {
