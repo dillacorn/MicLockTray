@@ -139,6 +139,35 @@ internal static class Program
                 Equal(36, light.Value, "light editor preserves initial target");
             }
 
+            // The tray may sit on the bottom edge of an auto-hidden taskbar.
+            // The menu must open completely above the edge, not beneath it.
+            var desktop = new System.Drawing.Rectangle(0, 0, 1920, 1080);
+            var nearTaskbar = MenuPlacement.Calculate(
+                new System.Drawing.Point(1900, 1079), desktop,
+                new System.Drawing.Size(280, 280));
+            Equal(true, nearTaskbar.Y + 280 <= desktop.Bottom - 24,
+                "tray menu leaves clearance for auto-hidden taskbar");
+            Equal(true, nearTaskbar.X >= desktop.Left &&
+                nearTaskbar.X + 280 <= desktop.Right,
+                "tray menu stays within horizontal display bounds");
+
+            var secondaryScreen = new System.Drawing.Rectangle(-2560, 0, 2560, 1440);
+            var secondaryMenu = MenuPlacement.Calculate(
+                new System.Drawing.Point(-10, 1400), secondaryScreen,
+                new System.Drawing.Size(300, 230));
+            Equal(true, secondaryMenu.X >= secondaryScreen.Left &&
+                secondaryMenu.X + 300 <= secondaryScreen.Right,
+                "tray menu stays on its secondary monitor");
+            Equal(true, secondaryMenu.Y + 230 <= secondaryScreen.Bottom - 24,
+                "secondary monitor respects bottom-edge clearance");
+
+            var upperTaskbar = MenuPlacement.Calculate(
+                new System.Drawing.Point(600, 15),
+                new System.Drawing.Rectangle(0, 50, 1200, 700),
+                new System.Drawing.Size(300, 240));
+            Equal(true, upperTaskbar.Y >= 58,
+                "top taskbar keeps context menu within work area");
+
             Console.WriteLine($"PASS: {_assertions} settings, interop and UI regression assertions");
         }
         finally
