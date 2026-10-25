@@ -23,7 +23,7 @@ Windows tray app that keeps microphone input volumes fixed at your chosen percen
 
 ## Using MicLockTray
 
-Right-click the microphone icon in the Windows notification area. Each connected recording device shows a lock symbol and its saved target volume. Open a microphone's submenu to **Lock/Unlock** it or **Set target volume**. Setting a device volume automatically locks it.
+Right-click the microphone icon in the Windows notification area. Click a microphone's lock row to toggle its lock; use **Set microphone volume…** to set an independent target. Setting a device volume automatically locks it. Unlocking a microphone allows other apps to change its input volume.
 
 Previously configured microphones appear under **Disconnected microphones** when unplugged. Their locks and target percentages are restored when Windows recognizes the same audio endpoint again. Changing USB ports, reinstalling drivers, or replacing hardware may produce a different Windows endpoint ID.
 
