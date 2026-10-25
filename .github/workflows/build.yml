@@ -27,6 +27,9 @@ jobs:
       - name: Build
         run: dotnet build MicLockTray/MicLockTray.csproj --configuration Release
 
+      - name: Test legacy settings and per-device persistence
+        run: dotnet run --project MicLockTray.RegressionTests/MicLockTray.RegressionTests.csproj --configuration Release
+
       - name: Validate single-file publish
         run: >-
           dotnet publish MicLockTray/MicLockTray.csproj
