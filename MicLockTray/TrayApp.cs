@@ -30,7 +30,8 @@ internal sealed class TrayApp : ApplicationContext
         {
             ShowImageMargin = false,
             ShowCheckMargin = false,
-            ShowItemToolTips = false
+            ShowItemToolTips = false,
+            AutoClose = true
         };
         ApplyMenuAppearance();
         _menu.Closed += (_, _) => CloseSubmenus();
@@ -89,9 +90,11 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (e.Button != MouseButtons.Right || _cleanedUp) return;
 
-        // NotifyIcon's automatic context placement can put nested menus below the
-        // visible desktop when the taskbar auto-hides. Measure the full menu first,
-        // then place it above the cursor within the monitor's usable bounds.
+        // Repeated right-clicks must reopen a clean menu, not rebuild a visible
+        // ToolStrip whose child drop-down still owns mouse capture.
+        if (_menu.Visible) _menu.Close();
+
+        // Place the full menu inside the active monitor for auto-hide taskbars.
         ApplyMenuAppearance();
         PopulateMenu();
         var cursor = Cursor.Position;
@@ -143,27 +146,15 @@ internal sealed class TrayApp : ApplicationContext
         if (item.DropDown.Visible) item.DropDown.Close();
     }
 
-    private void KeepSubmenuOpenOnPointerLeave(ToolStripMenuItem item)
+    private static void ConfigureMicrophoneSubmenu(ToolStripMenuItem item)
     {
-        // Keep the capture submenu visible while moving the pointer outside it.
-        // Actual clicks, keyboard dismissal, and an explicit root close still work.
-        item.DropDown.AutoClose = false;
-        if (item.DropDown is ToolStripDropDownMenu dropDownMenu)
+        // Keep WinForms AutoClose enabled. It handles outside clicks and
+        // deactivation; disabling it leaves orphaned menus on screen.
+        if (item.DropDown is ToolStripDropDownMenu dropDown)
         {
-            dropDownMenu.ShowImageMargin = false;
-            dropDownMenu.ShowCheckMargin = false;
+            dropDown.ShowImageMargin = false;
+            dropDown.ShowCheckMargin = false;
         }
-        item.DropDown.Closing += (_, e) =>
-        {
-            e.Cancel = PersistentLockMenuItem.KeepFlyoutOpen(e.CloseReason, _menu.Visible);
-        };
-        item.DropDownOpening += (_, _) =>
-        {
-            foreach (var other in _menu.Items.OfType<ToolStripMenuItem>())
-            {
-                if (!ReferenceEquals(other, item)) CloseSubmenu(other);
-            }
-        };
     }
 
     private void PopulateMenu()
@@ -236,7 +227,7 @@ internal sealed class TrayApp : ApplicationContext
                 _menu.Close();
                 OpenClassicRecordingPanel();
             }));
-            KeepSubmenuOpenOnPointerLeave(row);
+            ConfigureMicrophoneSubmenu(row);
             _menu.Items.Add(row);
         }
 
@@ -278,7 +269,7 @@ internal sealed class TrayApp : ApplicationContext
                     Settings.ForgetDevice(device.Id);
                     _menu.Close();
                 }));
-                KeepSubmenuOpenOnPointerLeave(row);
+                ConfigureMicrophoneSubmenu(row);
                 offlineMenu.DropDownItems.Add(row);
             }
             _menu.Items.Add(offlineMenu);
