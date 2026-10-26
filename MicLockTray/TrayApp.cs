@@ -182,10 +182,9 @@ internal sealed class TrayApp : ApplicationContext
                 (locked ? Settings.TargetPercent : device.CurrentPercent);
 
             var row = NewItem(DeviceCaption(device.Name, target, locked, device.IsBound));
-            var lockAction = NewItem(
+            var lockAction = new PersistentLockMenuItem(
                 $"{LockMark(!locked)} {(locked ? text.UnlockMicrophone : text.LockMicrophone)}",
-                keepOpen: true);
-            lockAction.Font = new Font(_menu.Font, FontStyle.Bold);
+                _menuDark);
             lockAction.Click += (_, _) =>
             {
                 bool next = !Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue;
@@ -241,10 +240,9 @@ internal sealed class TrayApp : ApplicationContext
             {
                 var row = NewItem(DeviceCaption(device.Name, device.TargetPercent,
                     device.Locked, bound: true));
-                var lockAction = NewItem(
+                var lockAction = new PersistentLockMenuItem(
                     $"{LockMark(!device.Locked)} {(device.Locked ? text.UnlockMicrophone : text.LockMicrophone)}",
-                    keepOpen: true);
-                lockAction.Font = new Font(_menu.Font, FontStyle.Bold);
+                    _menuDark);
                 lockAction.Click += (_, _) =>
                 {
                     bool next = Settings.GetDevice(device.Id)?.Locked != true;
@@ -354,11 +352,9 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     private ToolStripMenuItem NewItem(string label, Action? onClick = null,
-        bool enabled = true, bool keepOpen = false)
+        bool enabled = true)
     {
-        var item = keepOpen
-            ? new PersistentLockMenuItem { Text = label }
-            : new ToolStripMenuItem(label);
+        var item = new ToolStripMenuItem(label);
         item.BackColor = _menuBackground;
         item.ForeColor = _menuText;
         item.Enabled = enabled;
