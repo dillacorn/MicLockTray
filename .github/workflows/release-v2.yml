@@ -1,7 +1,6 @@
-name: Finalize verified MicLockTray v2.0 draft
+name: Add SmartScreen notice to existing v2.0 release
 
-# Recovery runs from the already-used feature branch, NOT from main.
-# The completed v2.0 draft and assets are never recreated or replaced.
+# One-time release-notes edit. No source code, tag, assets or main writes.
 on:
   push:
     branches:
@@ -17,66 +16,86 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  finalize:
+  update-notes:
     if: github.repository == 'dillacorn/MicLockTray'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Verify original main commit and existing draft assets
+      - name: Verify release and append Windows SmartScreen instructions
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          main="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
-          test "$main" = '564ecbfc98bbae41a47c48d91e6f4517992e7d35'
-          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/423797436")"
-          printf '%s\n' "$release" | jq -e '
-            .id == 423797436
-            and .draft == true
-            and .tag_name == "v2.0"
-            and .name == "MicLockTray v2.0"
-            and .target_commitish == "564ecbfc98bbae41a47c48d91e6f4517992e7d35"
-            and .prerelease == false
-            and ([.assets[] | select(
-              .name == "MicLockTray.exe"
-              and .size == 153946923
-              and .state == "uploaded"
-              and .digest == "sha256:ad21875800cb5a8081f9b810b2b54adffce08b66d1eba0fe8d15d8a81544cf9c"
-            )] | length) == 1
-            and ([.assets[] | select(
-              .name == "MicLockTray.exe.sha256"
-              and .size == 83
-              and .state == "uploaded"
-              and .digest == "sha256:7d401fd98355c1eb46769c5e0e468cbadfe00e4251aafc6ebb371c6ab276983a"
-            )] | length) == 1
-            and (.assets | length) == 2
-          ' >/dev/null
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v2.0" >/dev/null 2>&1; then
-            echo "::error::v2.0 tag already exists; refusing to move it"
-            false
-          fi
-          echo "Verified existing draft release, exact main commit, asset sizes and SHA256 digests."
+          python3 - <<'PY'
+          import json
+          import subprocess
 
-      - name: Publish verified existing draft by release ID
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/423797436" \
-            -F draft=false -f make_latest=true --jq '{id, tag_name, draft, html_url}'
-          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/423797436")"
-          printf '%s\n' "$release" | jq -e '
-            .id == 423797436
-            and .draft == false
-            and .tag_name == "v2.0"
-            and .prerelease == false
-            and ([.assets[] | select(
-              .name == "MicLockTray.exe"
-              and .digest == "sha256:ad21875800cb5a8081f9b810b2b54adffce08b66d1eba0fe8d15d8a81544cf9c"
-            )] | length) == 1
-          ' >/dev/null
-          tagsha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v2.0" --jq '.object.sha')"
-          test "$tagsha" = '564ecbfc98bbae41a47c48d91e6f4517992e7d35'
-          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
-          test "$latest" = 'v2.0'
-          echo 'v2.0 published. Tag, assets and latest-release state verified.'
+          repo = "dillacorn/MicLockTray"
+          release_id = 423797436
+          commit = "564ecbfc98bbae41a47c48d91e6f4517992e7d35"
+          exe_digest = "sha256:ad21875800cb5a8081f9b810b2b54adffce08b66d1eba0fe8d15d8a81544cf9c"
+          checksum_digest = "sha256:7d401fd98355c1eb46769c5e0e468cbadfe00e4251aafc6ebb371c6ab276983a"
+          existing = """MicLockTray v2.0 adds independent microphone locks and a simpler way to manage them directly from the Windows tray.
+
+          ### What is new
+          - Lock multiple microphones at different input volumes, with settings remembered after unplugging or restarting.
+          - Adjust volume directly in each microphone menu and open its Windows sound properties.
+          - Redesigned context menu with Windows light/dark theme support and an optional notification toggle.
+          - Improved startup guidance, menu reliability, and auto-hide taskbar compatibility.
+
+          ### Download
+          Windows x64: Download MicLockTray.exe below. Exit the old app before replacing it; your saved settings are preserved."""
+          notice = """### Windows SmartScreen (if prompted)
+          MicLockTray is not code-signed, so Windows may show **“Windows protected your PC”** when you first open it. If you downloaded `MicLockTray.exe` from **this official GitHub release**, select **More info → Run anyway**. Leave SmartScreen enabled.
+
+          This is for an *unrecognized app* warning only. If Microsoft Defender identifies a specific malware threat or quarantines the file, do not bypass that alert."""
+
+          def gh(*args, payload=None):
+              command = ["gh", "api", *args]
+              request = subprocess.run(
+                  command, input=payload, text=True,
+                  capture_output=True, check=False)
+              if request.returncode != 0:
+                  raise RuntimeError(f"GitHub request failed: {request.stderr[:1200]}")
+              return json.loads(request.stdout)
+
+          branch = gh(f"repos/{repo}/branches/main")
+          if branch["commit"]["sha"] != commit:
+              raise RuntimeError("main has moved; abort release-notes update")
+          tag = gh(f"repos/{repo}/git/ref/tags/v2.0")
+          if tag["object"]["sha"] != commit or tag["object"]["type"] != "commit":
+              raise RuntimeError("v2.0 tag mismatch")
+          release = gh(f"repos/{repo}/releases/{release_id}")
+          if any((
+              release["id"] != release_id,
+              release["tag_name"] != "v2.0",
+              release["name"] != "MicLockTray v2.0",
+              release["draft"],
+              release["prerelease"],
+              release["target_commitish"] != commit,
+          )):
+              raise RuntimeError("Unexpected v2.0 release state")
+          assets = release["assets"]
+          if len(assets) != 2 or sorted((a["name"], a["digest"], a["size"]) for a in assets) != sorted([
+              ("MicLockTray.exe", exe_digest, 153946923),
+              ("MicLockTray.exe.sha256", checksum_digest, 83),
+          ]):
+              raise RuntimeError("Release assets drifted; stop")
+          previous = release["body"]
+          if previous.replace("\r\n", "\n").rstrip() != existing:
+              raise RuntimeError("Release notes have changed; stop instead of overwriting")
+          newline = "\r\n" if "\r\n" in previous else "\n"
+          updated_body = previous.rstrip("\r\n") + newline * 2 + notice.replace("\n", newline) + newline
+
+          result = gh("-X", "PATCH", f"repos/{repo}/releases/{release_id}",
+                      "--input", "-", payload=json.dumps({"body": updated_body}))
+          if result["id"] != release_id or result["body"] != updated_body:
+              raise RuntimeError("Release note edit not confirmed")
+          observed = gh(f"repos/{repo}/releases/{release_id}")
+          if observed["body"] != updated_body:
+              raise RuntimeError("Read-back mismatch after edit")
+          if len(observed["assets"]) != 2 or sorted((a["id"], a["digest"]) for a in observed["assets"]) != sorted(
+              (a["id"], a["digest"]) for a in assets):
+              raise RuntimeError("Asset state changed unexpectedly")
+          print("PASS: Updated SmartScreen note on existing v2.0 release ID only.")
+          print("PASS: Read-back text, assets, tag and release state verified.")
+          PY
