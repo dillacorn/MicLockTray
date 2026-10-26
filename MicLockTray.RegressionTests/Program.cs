@@ -166,8 +166,10 @@ internal static class Program
             var nearTaskbar = MenuPlacement.Calculate(
                 new System.Drawing.Point(1900, 1079), desktop,
                 new System.Drawing.Size(280, 280));
-            Equal(true, nearTaskbar.Y + 280 <= desktop.Bottom - 24,
+            Equal(true, nearTaskbar.Y + 280 <= desktop.Bottom - 4,
                 "tray menu leaves clearance for auto-hidden taskbar");
+            Equal(true, desktop.Bottom - (nearTaskbar.Y + 280) <= 12,
+                "tray menu remains near the tray icon with no large cursor gap");
             Equal(true, nearTaskbar.X >= desktop.Left &&
                 nearTaskbar.X + 280 <= desktop.Right,
                 "tray menu stays within horizontal display bounds");
@@ -179,7 +181,7 @@ internal static class Program
             Equal(true, secondaryMenu.X >= secondaryScreen.Left &&
                 secondaryMenu.X + 300 <= secondaryScreen.Right,
                 "tray menu stays on its secondary monitor");
-            Equal(true, secondaryMenu.Y + 230 <= secondaryScreen.Bottom - 24,
+            Equal(true, secondaryMenu.Y + 230 <= secondaryScreen.Bottom - 4,
                 "secondary monitor respects bottom-edge clearance");
 
             var upperTaskbar = MenuPlacement.Calculate(
@@ -220,6 +222,12 @@ internal static class Program
                 {
                     Text = "Unlock microphone"
                 });
+                using var trayIcon = new System.Windows.Forms.NotifyIcon
+                {
+                    ContextMenuStrip = root
+                };
+                Equal(root, trayIcon.ContextMenuStrip,
+                    "tray icon owns popup so Windows can manage activation");
                 Equal(true, root.AutoClose, "root uses native outside-click dismissal");
                 Equal(true, microphone.DropDown.AutoClose,
                     "microphone flyout uses native outside-click dismissal");
