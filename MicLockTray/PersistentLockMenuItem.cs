@@ -14,6 +14,9 @@ internal sealed class PersistentLockMenuItem : ToolStripControlHost
         : base(CreateButton(caption, dark))
     {
         _button = (Button)Control;
+        // A hosted Button does not forward its Click into ToolStripItem.Click.
+        // Raise a dedicated event without invoking the dropdown's ItemClicked.
+        _button.Click += (_, e) => LockClicked?.Invoke(this, e);
         AutoSize = false;
         Size = _button.Size;
         Margin = Padding.Empty;
@@ -55,6 +58,9 @@ internal sealed class PersistentLockMenuItem : ToolStripControlHost
             _button.AccessibleName = value;
         }
     }
+
+    // This event originates from the child Button, not a ToolStrip menu item.
+    internal event EventHandler? LockClicked;
 
     // Direct hosted-button event. No ToolStripDropDownItem ItemClicked dismissal.
     internal void TriggerClick() => _button.PerformClick();
