@@ -191,25 +191,33 @@ internal static class Program
             Equal(true, upperTaskbar.Y >= 58,
                 "top taskbar keeps context menu within work area");
 
-            // Only microphone lock actions should keep their submenu open.
-            using (var lockItem = new PersistentLockMenuItem { Text = "Unlock microphone" })
+            // A hosted Button does not generate ToolStripDropDown.ItemClicked:
+            // this is what allows repeated lock toggles while outside-click
+            // dismissal still uses WinForms' normal AutoClose behavior.
+            using (var lockItem = new PersistentLockMenuItem("Unlock microphone", true))
             {
-                Equal(true, lockItem.KeepsMenuOpen,
-                    "microphone lock action does not dismiss the context menu");
+                Equal(true, lockItem.UsesHostedButton,
+                    "lock toggle uses a hosted button, not a menu command");
+                Equal(236, lockItem.Width, "lock row matches the volume editor width");
                 int toggles = 0;
-                lockItem.Click += (_, _) =>
+                int toolStripClicks = 0;
+                lockItem.Click += (_, _) => toolStripClicks++;
+                lockItem.LockClicked += (_, _) =>
                 {
                     toggles++;
                     lockItem.Text = toggles % 2 == 0
                         ? "Unlock microphone" : "Lock microphone";
                 };
-                lockItem.PerformClick();
+                lockItem.TriggerClick();
                 Equal("Lock microphone", lockItem.Text,
-                    "lock label updates immediately after a click");
-                lockItem.PerformClick();
+                    "first hosted lock click updates its caption");
+                lockItem.TriggerClick();
                 Equal("Unlock microphone", lockItem.Text,
-                    "second lock click restores the label");
-                Equal(2, toggles, "successive lock clicks are accepted in one menu session");
+                    "second hosted lock click restores its caption");
+                Equal(2, toggles,
+                    "hosted button forwards consecutive clicks");
+                Equal(0, toolStripClicks,
+                    "hosted button bypasses the menu-item click dismissal path");
             }
 
             // Native WinForms dismissal must remain enabled on both the root and
@@ -218,10 +226,8 @@ internal static class Program
             using (var microphone = new System.Windows.Forms.ToolStripMenuItem("Microphone"))
             {
                 root.Items.Add(microphone);
-                microphone.DropDownItems.Add(new PersistentLockMenuItem
-                {
-                    Text = "Unlock microphone"
-                });
+                microphone.DropDownItems.Add(
+                    new PersistentLockMenuItem("Unlock microphone", true));
                 using var trayIcon = new System.Windows.Forms.NotifyIcon
                 {
                     ContextMenuStrip = root
