@@ -228,8 +228,17 @@ internal static class Program
             using (var microphone = new System.Windows.Forms.ToolStripMenuItem("Microphone"))
             {
                 root.Items.Add(microphone);
-                microphone.DropDownItems.Add(
-                    new PersistentLockMenuItem("Unlock microphone", true));
+                var lockToggle = new PersistentLockMenuItem("Unlock microphone", true);
+                microphone.DropDownItems.Add(lockToggle);
+                int menuItemClicks = 0;
+                int directLockClicks = 0;
+                microphone.DropDown.ItemClicked += (_, _) => menuItemClicks++;
+                lockToggle.LockClicked += (_, _) => directLockClicks++;
+                lockToggle.TriggerClick();
+                Equal(1, directLockClicks,
+                    "hosted lock button works inside a microphone submenu");
+                Equal(0, menuItemClicks,
+                    "lock button does not trigger submenu ItemClicked dismissal");
                 using var trayIcon = new System.Windows.Forms.NotifyIcon
                 {
                     ContextMenuStrip = root
