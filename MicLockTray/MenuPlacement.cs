@@ -7,7 +7,7 @@ namespace MicLockTray;
 internal static class MenuPlacement
 {
     internal static Point Calculate(Point cursor, Rectangle workArea, Size menuSize,
-        int bottomMargin = 24)
+        int bottomMargin = 4)
     {
         if (workArea.Width <= 0 || workArea.Height <= 0)
             return cursor;
@@ -22,7 +22,9 @@ internal static class MenuPlacement
         // Prefer the menu entirely above a bottom-docked tray icon. Clamping
         // keeps it on-screen for top/side taskbars and secondary monitors too.
         int x = Math.Clamp(cursor.X - menuSize.Width + 16, left, right);
-        int y = Math.Clamp(cursor.Y - menuSize.Height - 12, top, bottom);
+        // Keep the menu's lower edge close to the tray icon, so the pointer
+        // can reach it without crossing a distracting gap.
+        int y = Math.Clamp(cursor.Y - menuSize.Height + 4, top, bottom);
         return new Point(x, y);
     }
 }
