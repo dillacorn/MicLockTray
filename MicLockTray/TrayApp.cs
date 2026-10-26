@@ -34,16 +34,24 @@ internal sealed class TrayApp : ApplicationContext
             AutoClose = true
         };
         ApplyMenuAppearance();
+        _menu.Opening += (_, _) =>
+        {
+            ApplyMenuAppearance();
+            PopulateMenu();
+        };
+        _menu.Opened += (_, _) => PositionOpenMenu();
         _menu.Closed += (_, _) => CloseSubmenus();
 
+        // NotifyIcon activates its own shell window before showing the popup.
+        // A manually displayed ContextMenuStrip can lack that foreground owner,
+        // causing missed outside-click dismissal and unreliable Escape behavior.
         _icon = new NotifyIcon
         {
             Icon = _trayIcon,
             Text = text.AppName,
+            ContextMenuStrip = _menu,
             Visible = true
         };
-
-        _icon.MouseUp += OnTrayMouseUp;
 
         _enforcer = new MicEnforcer();
         _enforcer.Enable();
@@ -86,24 +94,16 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Renderer = new ToolStripProfessionalRenderer(new MicColors(_menuDark));
     }
 
-    private void OnTrayMouseUp(object? sender, MouseEventArgs e)
+    private void PositionOpenMenu()
     {
-        if (e.Button != MouseButtons.Right || _cleanedUp) return;
-
-        // Repeated right-clicks must reopen a clean menu, not rebuild a visible
-        // ToolStrip whose child drop-down still owns mouse capture.
-        if (_menu.Visible) _menu.Close();
-
-        // Place the full menu inside the active monitor for auto-hide taskbars.
-        ApplyMenuAppearance();
-        PopulateMenu();
+        // Leave activation and dismissal to NotifyIcon. Adjust only geometry,
+        // after WinForms has calculated the actual rendered menu dimensions.
         var cursor = Cursor.Position;
         var screen = Screen.FromPoint(cursor);
         var bounds = Rectangle.Intersect(screen.WorkingArea, screen.Bounds);
-        var placement = MenuPlacement.Calculate(cursor, bounds,
-            _menu.GetPreferredSize(Size.Empty), bottomMargin: 24);
+        var placement = MenuPlacement.Calculate(cursor, bounds, _menu.Size, bottomMargin: 4);
+        _menu.Location = placement;
         ConfigureDropDownDirections(placement, bounds);
-        _menu.Show(placement);
     }
 
     private void ConfigureDropDownDirections(Point location, Rectangle bounds)
