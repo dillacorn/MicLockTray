@@ -4,10 +4,19 @@ Applies to the entire repository.
 
 ## Project and behavior
 
-- MicLockTray is a Windows .NET 8 / WinForms, x64, single-executable tray utility that enforces a user-selected **default recording-device microphone input** volume through Windows Core Audio callbacks. It is not an output-volume controller.
+- MicLockTray is a Windows .NET 8 / WinForms, x64, single-executable tray utility that enforces selected **microphone input** volumes through Windows Core Audio callbacks, including independent saved device locks and the legacy default-recording-device fallback. It is not an output-volume controller.
 - Preserve event-driven enforcement, pause/resume, selection of the current default capture endpoint, 1–100% target range, single-instance behavior where implemented, and per-user autorun controls. Do not add polling, a service, administrator requirements, telemetry, or unrequested third-party utilities.
 - `MicLockTray/Installer.cs` owns per-user startup registration; localization is embedded (see `MicLockTray/UiText.cs`). Preserve existing user settings and translation fallback when changing UI text.
 - `MicLockTray/MicLockTray.csproj` is the Windows build source. The `.github/workflows/build.yml` workflow checks a Release build and win-x64 self-contained single-file publish output; **a passing build is not a published GitHub Release**.
+
+## User-facing release notes
+
+- Start each release with a short plain-language introduction explaining why the update matters.
+- Follow with a compact **What's new** or **Changes** section containing only changes users will notice or need to act on. Prefer 3–6 concise bullets.
+- Highlight user-facing fixes, settings changes, and any behavior or compatibility changes. Include upgrade instructions only when actually needed.
+- Keep titles and descriptions readable and direct; avoid walls of text, internal implementation details, GitHub Actions logs, commit lists, test matrices, hashes, redundant headings, repeated boilerplate, and exhaustive verification narratives.
+- Put necessary technical provenance or artifact verification in a separate developer-oriented file or concise collapsible details, not the primary release message. Do not claim testing or publication that has not happened.
+- Preserve clear download/install links or directions when releasing binaries.
 
 ## Merge and release authorization
 

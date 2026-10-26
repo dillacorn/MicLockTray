@@ -1,0 +1,130 @@
+name: Publish MicLockTray v2.0
+
+# One-time release bridge: runs only when this file first reaches main.
+# Subsequent ordinary pushes to main do not trigger it.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/release-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: miclocktray-release-v2.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'dillacorn/MicLockTray'
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Check that v2.0 is not already published
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tagRefs = @(gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/v2.0" | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing Git tags.' }
+          if ($tagRefs | Where-Object { $_.ref -eq 'refs/tags/v2.0' }) {
+            throw 'Tag v2.0 already exists. Refusing to replace or move it.'
+          }
+          $releases = @(gh release list --limit 100 --json tagName | ConvertFrom-Json)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing releases.' }
+          if ($releases | Where-Object { $_.tagName -eq 'v2.0' }) {
+            throw 'Release v2.0 already exists. Refusing to overwrite it.'
+          }
+
+      - name: Build and run regression tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build MicLockTray/MicLockTray.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
+          dotnet run --project MicLockTray.RegressionTests/MicLockTray.RegressionTests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }
+
+      - name: Publish Windows x64 single-file executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish MicLockTray/MicLockTray.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true --output publish
+          if ($LASTEXITCODE -ne 0) { throw 'Single-file publish failed.' }
+
+      - name: Validate executable and prepare short release notes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'publish/MicLockTray.exe').Path
+          $file = Get-Item $exe
+          if ($file.Length -lt 20000000) { throw 'Published EXE is unexpectedly small.' }
+          $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+          if ($version.FileMajorPart -ne 2 -or $version.FileMinorPart -ne 0) {
+            throw "Unexpected executable version: $($version.FileVersion)"
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $exe).Hash.ToLowerInvariant()
+          "$hash  MicLockTray.exe" | Set-Content -Path 'publish/MicLockTray.exe.sha256' -Encoding ascii
+          Write-Host "Version: $($version.FileVersion)"
+          Write-Host "SHA256: $hash"
+          Write-Host "EXE bytes: $($file.Length)"
+          $notes = @(
+            'MicLockTray v2.0 adds independent microphone locks and a simpler way to manage them directly from the Windows tray.'
+            ''
+            '### What is new'
+            '- Lock multiple microphones at different input volumes, with settings remembered after unplugging or restarting.'
+            '- Adjust volume directly in each microphone menu and open its Windows sound properties.'
+            '- Redesigned context menu with Windows light/dark theme support and an optional notification toggle.'
+            '- Improved startup guidance, menu reliability, and auto-hide taskbar compatibility.'
+            ''
+            '### Download'
+            'Windows x64: Download MicLockTray.exe below. Exit the old app before replacing it; your saved settings are preserved.'
+          )
+          [System.IO.File]::WriteAllLines(
+            (Join-Path $PWD 'release-notes-v2.0.txt'),
+            [string[]]$notes,
+            [System.Text.UTF8Encoding]::new($false))
+
+      - name: Create draft GitHub Release with tested executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release create v2.0 publish/MicLockTray.exe publish/MicLockTray.exe.sha256 --target "$env:GITHUB_SHA" --title "MicLockTray v2.0" --notes-file release-notes-v2.0.txt --draft
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub draft release or asset upload failed.' }
+
+      - name: Verify uploaded assets and publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/v2.0" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read draft release.' }
+          if (-not $release.draft) { throw 'Release must remain draft until verified.' }
+          $exe = @($release.assets | Where-Object { $_.name -eq 'MicLockTray.exe' })
+          $checksum = @($release.assets | Where-Object { $_.name -eq 'MicLockTray.exe.sha256' })
+          if ($exe.Count -ne 1 -or $checksum.Count -ne 1) { throw 'Release assets are incomplete.' }
+          if ($exe[0].size -ne (Get-Item 'publish/MicLockTray.exe').Length) {
+            throw 'Uploaded executable size does not match the validated build.'
+          }
+          $tag = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/v2.0" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $tag.object.sha -ne $env:GITHUB_SHA) {
+            throw 'Tag does not point to the exact release commit.'
+          }
+          gh release edit v2.0 --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to publish verified GitHub release.' }

@@ -19,6 +19,6 @@ internal static class Program
         Settings.Load();
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApp());
+        Application.Run(new TrayApp(startedHidden: arg == "--hidden"));
     }
 }

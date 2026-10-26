@@ -1,56 +1,29 @@
 # MicLockTray
 
-####  See [Release Page](https://github.com/dillacorn/MicLockTray/releases) for install directions!
+A lightweight Windows tray app that keeps your microphone input volume where you set it. Lock multiple microphones independently without constant polling.
 
-Windows tray app that keeps your microphone input volume fixed at a user-chosen percentage. It targets the **default recording device** and **corrects instantly** whenever something tries to change it (event-driven).
-
-> Some hardware/app combos keep “helpfully” adjusting mic gain. MicLockTray pins it where you want it.
-
----
+**[Download MicLockTray](https://github.com/dillacorn/MicLockTray/releases)**
 
 ## Features
 
-- Locks mic input volume to a chosen target (1–100%).
-- Simple tray UI: Pause/Resume, Set target volume, Install/Remove autorun, Exit.
-- Automatically follows the Windows display language for included translations.
-- No admin required. Per-user autorun.
-- Lightweight single EXE. No dependencies. No telemetry. No log files.
-- Uses Windows Core Audio APIs (`IAudioEndpointVolume`).
-- [NirCmd](https://www.nirsoft.net/utils/nircmd.html) NOT required — this is a standalone application developed by me!
+- Lock any number of microphones at separate volumes (1–100%).
+- Remember each lock and volume after unplugging or restarting.
+- Right-click the tray icon; hover a microphone to lock/unlock it, edit its target volume inline, or open properties.
+- Follow Windows light/dark mode or choose a menu theme. Pause enforcement, notifications, and autorun are optional.
+- Retain the original default-microphone lock for unconfigured devices.
+- No administrator access, extra utilities, telemetry, or log files. English and Simplified Chinese.
 
----
+## Usage
 
-## Localization
+Run `MicLockTray.exe`, **right-click its tray icon**, and hover over a microphone to lock/unlock it, adjust the volume, or open its properties. Other settings and the GitHub About link are in the main menu. Disconnected microphones keep their saved settings.
 
-MicLockTray detects the Windows user-interface culture at startup. English and Simplified Chinese are currently included; unsupported languages safely fall back to English. Translation strings remain embedded in the main executable, so localization does not add runtime dependencies or extra language files.
+## About
 
-Simplified Chinese translation adapted from [BaoZiFly-233/MicLockTray](https://github.com/BaoZiFly-233/MicLockTray).
+Originally developed by me. Later enhancements use LLM assistance for development and documentation; changes still require review and validation.
 
----
+- **Translation:** Simplified Chinese adapted from [BaoZiFly-233](https://github.com/BaoZiFly-233/MicLockTray).
+- **Icon:** [Papirus Dev Team](https://www.iconarchive.com/show/papirus-devices-icons-by-papirus-team/audio-input-microphone-icon.html).
+- **Related:** [Linux mic lock](https://github.com/dillacorn/arch-hypr-dots/blob/main/config/hypr/scripts/miclock.sh) · [VolLockTray (output volume)](https://github.com/dillacorn/VolLockTray)
+- **License:** [MIT](LICENSE). Runs locally and collects no user data; use is subject to applicable laws.
 
-## Icon Credit
-Icon: **“Audio input microphone Icon”** by [Papirus Dev Team](https://www.iconarchive.com/artist/papirus-team.html) on [iconarchive.com](https://www.iconarchive.com/show/papirus-devices-icons-by-papirus-team/audio-input-microphone-icon.html)
-
----
-
-Need a Mic Lock Linux 🐧 solution?
-- Check out my script [miclock.sh](https://github.com/dillacorn/arch-hypr-dots/blob/main/config/hypr/scripts/miclock.sh)
-
----
-
-Want to lock your audio output volume instead?
-- Check out [VolLockTray](https://github.com/dillacorn/VolLockTray)
-
-## License
-This project is licensed under the [MIT License](https://github.com/dillacorn/MicLockTray/blob/main/LICENSE).
-
-### Legal Notice
-This project is a general-purpose open-source utility that runs locally on the
-user’s system. It does not provide a hosted service and does not collect user
-data. Users are responsible for complying with laws and regulations in their
-own jurisdiction when using this software.
-
-## ☕ Donate
-
-Built and maintained out of passion. Always FOSS. Donations appreciated.  
-[Donate via PayPal](https://www.paypal.com/donate/?business=XSNV4QP8JFY9Y&no_recurring=0&item_name=Built+and+maintained+out+of+passion.+Always+FOSS.+Donations+appreciated.+%28smtty%2C+MicLockTray%2C+awtarchy%29&currency_code=USD)
+Built and maintained as a FOSS passion project. [Donate via PayPal](https://www.paypal.com/donate/?business=XSNV4QP8JFY9Y&no_recurring=0&item_name=Built+and+maintained+out+of+passion.+Always+FOSS.+Donations+appreciated.+%28smtty%2C+MicLockTray%2C+awtarchy%29&currency_code=USD).

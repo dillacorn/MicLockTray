@@ -8,7 +8,34 @@ internal static class UiText
     internal sealed class Strings
     {
         public string AppName { get; init; } = "";
+        public string Microphones { get; init; } = "";
+        public string Options { get; init; } = "";
+        public string About { get; init; } = "";
+        public string MicrophoneProperties { get; init; } = "";
+        public string SoundPanels { get; init; } = "";
+        public string ClassicSoundPanel { get; init; } = "";
+        public string WindowsSoundSettings { get; init; } = "";
+        public string MenuTheme { get; init; } = "";
+        public string ThemeSystem { get; init; } = "";
+        public string ThemeLight { get; init; } = "";
+        public string ThemeDark { get; init; } = "";
+        public string AudioSettingsErrorFormat { get; init; } = "";
+
+        public string SetMicrophoneVolume { get; init; } = "";
+        public string NoMicrophones { get; init; } = "";
+        public string DetectionFailed { get; init; } = "";
+        public string NotEnforcing { get; init; } = "";
+        public string DisconnectedMicrophonesFormat { get; init; } = "";
+        public string LockMicrophone { get; init; } = "";
+        public string UnlockMicrophone { get; init; } = "";
+        public string ForgetMicrophone { get; init; } = "";
+        public string DefaultFallback { get; init; } = "";
+        public string DefaultFallbackDescription { get; init; } = "";
+        public string DisableNotifications { get; init; } = "";
+        public string EnableNotifications { get; init; } = "";
+        public string FirstLaunchHint { get; init; } = "";
         public string TrayTooltipFormat { get; init; } = "";
+        public string PausedTooltip { get; init; } = "";
         public string PauseEnforcement { get; init; } = "";
         public string ResumeEnforcement { get; init; } = "";
         public string SetTargetVolume { get; init; } = "";
@@ -33,7 +60,34 @@ internal static class UiText
     private static readonly Strings English = new()
     {
         AppName = "MicLockTray",
-        TrayTooltipFormat = "MicLockTray: target {0}%",
+        Microphones = "Microphones",
+        Options = "Options",
+        About = "About MicLockTray",
+        MicrophoneProperties = "Microphone properties",
+        SoundPanels = "Sound settings",
+        ClassicSoundPanel = "Classic recording panel",
+        WindowsSoundSettings = "Windows sound settings",
+        MenuTheme = "Menu theme",
+        ThemeSystem = "Follow Windows",
+        ThemeLight = "Light",
+        ThemeDark = "Dark",
+        AudioSettingsErrorFormat = "Could not open the page or settings:\n{0}",
+
+        SetMicrophoneVolume = "Set microphone volume…",
+        NoMicrophones = "No active microphones",
+        DetectionFailed = "Unable to read microphones",
+        NotEnforcing = "not enforcing",
+        DisconnectedMicrophonesFormat = "Disconnected microphones ({0})",
+        LockMicrophone = "Lock microphone",
+        UnlockMicrophone = "Unlock microphone",
+        ForgetMicrophone = "Forget saved microphone",
+        DefaultFallback = "Default mic fallback",
+        DefaultFallbackDescription = "Applies to default recording microphones without individual settings.",
+        DisableNotifications = "Disable notifications",
+        EnableNotifications = "Enable notifications",
+        FirstLaunchHint = "↑ Right-click me to choose microphones and locked volume levels.",
+        TrayTooltipFormat = "MicLockTray: {0} microphone(s) locked",
+        PausedTooltip = "MicLockTray: paused",
         PauseEnforcement = "Pause enforcement",
         ResumeEnforcement = "Resume enforcement",
         SetTargetVolume = "Set target volume…",
@@ -45,7 +99,7 @@ internal static class UiText
         ResumedBalloonFormat = "Resumed. Locking at {0}% on change.",
         TargetSetBalloonFormat = "Target set to {0}%.",
         VolumeDialogTitle = "Set target volume (%)",
-        VolumeLabel = "Volume (1–100):",
+        VolumeLabel = "Volume",
         Ok = "OK",
         Cancel = "Cancel",
         AutorunInstalled = "Autorun installed.",
@@ -59,7 +113,34 @@ internal static class UiText
     private static readonly Strings SimplifiedChinese = new()
     {
         AppName = "MicLockTray",
-        TrayTooltipFormat = "MicLockTray：目标 {0}%",
+        Microphones = "麦克风",
+        Options = "选项",
+        About = "关于 MicLockTray",
+        MicrophoneProperties = "麦克风属性",
+        SoundPanels = "声音设置",
+        ClassicSoundPanel = "经典录音控制面板",
+        WindowsSoundSettings = "Windows 声音设置",
+        MenuTheme = "菜单主题",
+        ThemeSystem = "跟随 Windows",
+        ThemeLight = "浅色",
+        ThemeDark = "深色",
+        AudioSettingsErrorFormat = "无法打开页面或设置：\n{0}",
+
+        SetMicrophoneVolume = "设置麦克风音量…",
+        NoMicrophones = "没有活动的麦克风",
+        DetectionFailed = "无法读取麦克风设备",
+        NotEnforcing = "未锁定",
+        DisconnectedMicrophonesFormat = "已断开的麦克风 ({0})",
+        LockMicrophone = "锁定麦克风",
+        UnlockMicrophone = "解锁麦克风",
+        ForgetMicrophone = "忘记已保存的麦克风",
+        DefaultFallback = "默认麦克风备用锁定",
+        DefaultFallbackDescription = "适用于尚未单独设置的默认录音设备。",
+        DisableNotifications = "禁用通知",
+        EnableNotifications = "启用通知",
+        FirstLaunchHint = "↑ 右键点击此图标，选择要锁定的麦克风和音量。",
+        TrayTooltipFormat = "MicLockTray：已锁定 {0} 个麦克风",
+        PausedTooltip = "MicLockTray：已暂停",
         PauseEnforcement = "暂停锁定",
         ResumeEnforcement = "恢复锁定",
         SetTargetVolume = "设置目标音量…",
@@ -71,7 +152,7 @@ internal static class UiText
         ResumedBalloonFormat = "已恢复。检测到变化时将锁定到 {0}%。",
         TargetSetBalloonFormat = "目标音量已设置为 {0}%。",
         VolumeDialogTitle = "设置目标音量 (%)",
-        VolumeLabel = "音量 (1–100)：",
+        VolumeLabel = "音量",
         Ok = "确定",
         Cancel = "取消",
         AutorunInstalled = "开机自启已安装。",

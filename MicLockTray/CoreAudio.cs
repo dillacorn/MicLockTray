@@ -35,7 +35,60 @@ internal static class CoreAudio
         public uint propertyId;
     }
 
-    [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-C0F926C399A4"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+
+    private static readonly Guid DeviceFriendlyNameKey = new("A45C254E-DF1C-4EFD-8020-67D146A850E0");
+    internal static readonly Guid EndpointVolumeGuid = new("5CDF2C82-841E-4546-9722-0CF74078229A");
+    internal const int ActiveDeviceState = 1;
+
+    public static string? GetDeviceId(IMMDevice device)
+    {
+        if (device.GetId(out var pointer) != 0) return null;
+        try { return Marshal.PtrToStringUni(pointer); }
+        finally { Marshal.FreeCoTaskMem(pointer); }
+    }
+
+    public static string GetFriendlyName(IMMDevice device, string id)
+    {
+        IntPtr pointer = IntPtr.Zero;
+        try
+        {
+            if (device.OpenPropertyStore(0, out pointer) != 0 || pointer == IntPtr.Zero)
+                return id;
+
+            var store = (IPropertyStore)Marshal.GetObjectForIUnknown(pointer);
+            var key = new PropertyKey { formatId = DeviceFriendlyNameKey, propertyId = 14 };
+            if (store.GetValue(ref key, out var value) != 0) return id;
+            try
+            {
+                return value.variantType == 31 && value.stringPointer != IntPtr.Zero
+                    ? Marshal.PtrToStringUni(value.stringPointer) ?? id
+                    : id;
+            }
+            finally { _ = PropVariantClear(ref value); }
+        }
+        catch { return id; }
+        finally { if (pointer != IntPtr.Zero) _ = Marshal.Release(pointer); }
+    }
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IPropertyStore
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int GetAt(uint index, out PropertyKey key);
+        [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    public struct PropVariant
+    {
+        [FieldOffset(0)] public ushort variantType;
+        [FieldOffset(8)] public IntPtr stringPointer;
+    }
+
+    [DllImport("ole32.dll")]
+    private static extern int PropVariantClear(ref PropVariant value);
+
+    [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMMDeviceCollection
     {
         [PreserveSig] int GetCount(out uint deviceCount);
@@ -60,19 +113,19 @@ internal static class CoreAudio
         [PreserveSig] int RegisterControlChangeNotify([MarshalAs(UnmanagedType.Interface)] IAudioEndpointVolumeCallback callback);
         [PreserveSig] int UnregisterControlChangeNotify([MarshalAs(UnmanagedType.Interface)] IAudioEndpointVolumeCallback callback);
         [PreserveSig] int GetChannelCount(out uint channelCount);
-        [PreserveSig] int SetMasterVolumeLevel(float levelDb, Guid eventContext);
-        [PreserveSig] int SetMasterVolumeLevelScalar(float level, Guid eventContext);
+        [PreserveSig] int SetMasterVolumeLevel(float levelDb, ref Guid eventContext);
+        [PreserveSig] int SetMasterVolumeLevelScalar(float level, ref Guid eventContext);
         [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
         [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
-        [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, Guid eventContext);
-        [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, Guid eventContext);
+        [PreserveSig] int SetChannelVolumeLevel(uint channel, float levelDb, ref Guid eventContext);
+        [PreserveSig] int SetChannelVolumeLevelScalar(uint channel, float level, ref Guid eventContext);
         [PreserveSig] int GetChannelVolumeLevel(uint channel, out float levelDb);
         [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
-        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool muted, Guid eventContext);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool muted, ref Guid eventContext);
         [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool muted);
         [PreserveSig] int GetVolumeStepInfo(out uint step, out uint stepCount);
-        [PreserveSig] int VolumeStepUp(Guid eventContext);
-        [PreserveSig] int VolumeStepDown(Guid eventContext);
+        [PreserveSig] int VolumeStepUp(ref Guid eventContext);
+        [PreserveSig] int VolumeStepDown(ref Guid eventContext);
         [PreserveSig] int QueryHardwareSupport(out uint hardwareSupportMask);
         [PreserveSig] int GetVolumeRange(out float minDb, out float maxDb, out float incrementDb);
     }

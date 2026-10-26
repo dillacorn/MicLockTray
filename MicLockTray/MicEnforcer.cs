@@ -10,8 +10,7 @@ namespace MicLockTray;
 
 internal sealed class MicEnforcer : IDisposable
 {
-    private const int RebindDelayMs = 100;
-
+    private const int RefreshDelayMs = 100;
     private static readonly CoreAudio.ERole[] Roles =
     {
         CoreAudio.ERole.eConsole,
@@ -19,8 +18,12 @@ internal sealed class MicEnforcer : IDisposable
         CoreAudio.ERole.eCommunications
     };
 
+    internal sealed record DeviceInfo(string Id, string Name, int CurrentPercent, bool IsDefault, bool IsBound);
+
     private sealed class Binding
     {
+        public string Id = "";
+        public string Name = "";
         public CoreAudio.IAudioEndpointVolume Endpoint = default!;
         public VolumeCallback Callback = default!;
     }
@@ -29,13 +32,13 @@ internal sealed class MicEnforcer : IDisposable
     private sealed class VolumeCallback : IAudioEndpointVolumeCallback
     {
         private readonly WeakReference<MicEnforcer> _owner;
-        private readonly CoreAudio.ERole _role;
+        private readonly string _id;
         private readonly Guid _eventContext;
 
-        public VolumeCallback(MicEnforcer owner, CoreAudio.ERole role, Guid eventContext)
+        public VolumeCallback(MicEnforcer owner, string id, Guid eventContext)
         {
             _owner = new WeakReference<MicEnforcer>(owner);
-            _role = role;
+            _id = id;
             _eventContext = eventContext;
         }
 
@@ -44,18 +47,15 @@ internal sealed class MicEnforcer : IDisposable
             try
             {
                 if (notificationData == IntPtr.Zero) return 0;
-
                 var data = Marshal.PtrToStructure<AudioVolumeNotificationData>(notificationData);
                 if (data.eventContext == _eventContext) return 0;
-
                 if (_owner.TryGetTarget(out var owner))
-                    owner.HandleVolumeChanged(_role, data.masterVolume);
+                    owner.HandleVolumeChanged(_id, data.masterVolume);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"MicLockTray volume callback failed: {ex}");
             }
-
             return 0;
         }
     }
@@ -70,44 +70,61 @@ internal sealed class MicEnforcer : IDisposable
             _owner = new WeakReference<MicEnforcer>(owner);
         }
 
-        public void OnDefaultDeviceChanged(CoreAudio.EDataFlow flow, CoreAudio.ERole role, string? deviceId)
+        public void OnDefaultDeviceChanged(CoreAudio.EDataFlow flow, CoreAudio.ERole role, string? id)
         {
-            if (flow != CoreAudio.EDataFlow.eCapture) return;
-            if (_owner.TryGetTarget(out var owner)) owner.ScheduleRebind(role);
+            if (flow == CoreAudio.EDataFlow.eCapture && _owner.TryGetTarget(out var owner))
+                owner.ScheduleRefresh();
         }
 
-        public void OnDeviceStateChanged(string deviceId, uint newState) { }
-        public void OnDeviceAdded(string deviceId) { }
-        public void OnDeviceRemoved(string deviceId) { }
-        public void OnPropertyValueChanged(string deviceId, CoreAudio.PropertyKey key) { }
+        public void OnDeviceStateChanged(string id, uint state)
+        {
+            if (_owner.TryGetTarget(out var owner)) owner.ScheduleRefresh();
+        }
+
+        public void OnDeviceAdded(string id)
+        {
+            if (_owner.TryGetTarget(out var owner)) owner.ScheduleRefresh();
+        }
+
+        public void OnDeviceRemoved(string id)
+        {
+            if (_owner.TryGetTarget(out var owner)) owner.ScheduleRefresh();
+        }
+
+        public void OnPropertyValueChanged(string id, CoreAudio.PropertyKey key)
+        {
+            if (_owner.TryGetTarget(out var owner)) owner.ScheduleRefresh();
+        }
     }
 
     private readonly object _gate = new();
-    private readonly Func<float> _getTargetScalar;
+    private readonly object _refreshGate = new();
     private readonly Guid _eventContext = Guid.NewGuid();
     private readonly CoreAudio.IMMDeviceEnumerator _enumerator =
         (CoreAudio.IMMDeviceEnumerator)new CoreAudio.MMDeviceEnumerator();
-    private readonly NotificationClient _notificationClient;
-    private readonly Dictionary<CoreAudio.ERole, Binding> _bindings = new();
-    private readonly Dictionary<CoreAudio.ERole, ThreadingTimer> _rebindTimers = new();
-
-    private bool _notificationRegistered;
+    private readonly NotificationClient _notifications;
+    private readonly Dictionary<string, Binding> _bindings = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _defaultIds = new(StringComparer.OrdinalIgnoreCase);
+    private ThreadingTimer? _refreshTimer;
+    private bool _registered;
     private bool _enabled;
     private bool _disposed;
+    private long _generation;
 
-    public MicEnforcer(Func<float> getTargetScalar)
+    public MicEnforcer()
     {
-        _getTargetScalar = getTargetScalar;
-        _notificationClient = new NotificationClient(this);
+        _notifications = new NotificationClient(this);
     }
 
-    public bool IsEnabled
+    public bool IsEnabled { get { lock (_gate) return _enabled && !_disposed; } }
+    private bool _enumerationFailed;
+    public bool DeviceEnumerationFailed { get { lock (_gate) return _enumerationFailed; } }
+
+    private void RecordEnumerationFailure(bool failed)
     {
-        get
-        {
-            lock (_gate) return _enabled && !_disposed;
-        }
+        lock (_gate) _enumerationFailed = failed;
     }
+
 
     public void Enable()
     {
@@ -115,210 +132,297 @@ internal sealed class MicEnforcer : IDisposable
         {
             if (_disposed || _enabled) return;
             _enabled = true;
+            _generation++;
         }
 
         bool registered = false;
-        try
-        {
-            registered = _enumerator.RegisterEndpointNotificationCallback(_notificationClient) == 0;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"MicLockTray endpoint notification registration failed: {ex}");
-        }
+        try { registered = _enumerator.RegisterEndpointNotificationCallback(_notifications) == 0; }
+        catch (Exception ex) { Debug.WriteLine($"MicLockTray notification registration failed: {ex}"); }
 
-        bool keepRegistration;
         lock (_gate)
         {
-            keepRegistration = registered && !_disposed && _enabled;
-            _notificationRegistered = keepRegistration;
+            if (!_enabled || _disposed)
+            {
+                if (registered)
+                {
+                    try { _ = _enumerator.UnregisterEndpointNotificationCallback(_notifications); }
+                    catch { }
+                }
+                return;
+            }
+            _registered = registered;
         }
 
-        if (registered && !keepRegistration)
-        {
-            try { _ = _enumerator.UnregisterEndpointNotificationCallback(_notificationClient); }
-            catch { }
-            return;
-        }
-
-        foreach (var role in Roles)
-            RebindNow(role);
+        RefreshNow();
     }
 
     public void Disable()
     {
         Binding[] bindings;
-        ThreadingTimer[] timers;
-        bool unregisterNotifications;
-
+        ThreadingTimer? timer;
+        bool unregister;
         lock (_gate)
         {
-            if (!_enabled && !_notificationRegistered && _bindings.Count == 0 && _rebindTimers.Count == 0)
-                return;
-
+            if (!_enabled && !_registered && _bindings.Count == 0 && _refreshTimer is null) return;
             _enabled = false;
+            _generation++;
             bindings = _bindings.Values.ToArray();
             _bindings.Clear();
-            timers = _rebindTimers.Values.ToArray();
-            _rebindTimers.Clear();
-            unregisterNotifications = _notificationRegistered;
-            _notificationRegistered = false;
+            _defaultIds.Clear();
+            timer = _refreshTimer;
+            _refreshTimer = null;
+            unregister = _registered;
+            _registered = false;
         }
 
-        foreach (var timer in timers)
+        try { timer?.Dispose(); } catch { }
+        foreach (var binding in bindings) UnregisterBinding(binding);
+
+        if (unregister)
         {
-            try { timer.Dispose(); } catch { }
+            try { _ = _enumerator.UnregisterEndpointNotificationCallback(_notifications); }
+            catch (Exception ex) { Debug.WriteLine($"MicLockTray notification unregister failed: {ex}"); }
         }
+    }
 
-        foreach (var binding in bindings)
-            UnregisterBinding(binding);
+    // Enumerate for the menu even if a device's volume callback could not bind.
+    // This runs only on menu open, not as enforcement polling.
+    public DeviceInfo[] GetDevices() => GetDevicesWhilePaused();
 
-        if (!unregisterNotifications) return;
+    private DeviceInfo[] GetDevicesWhilePaused()
+    {
+        // Pausing releases callbacks but must not hide connected microphones from the menu.
+        // This enumeration runs only when the user opens the context menu, not on a timer.
+        var devices = new List<DeviceInfo>();
+        var defaults = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var role in Roles)
+            {
+                if (_enumerator.GetDefaultAudioEndpoint(CoreAudio.EDataFlow.eCapture,
+                        role, out var defaultDevice) != 0 || defaultDevice is null) continue;
+                string? id = CoreAudio.GetDeviceId(defaultDevice);
+                if (id is not null) defaults.Add(id);
+            }
 
-        try { _ = _enumerator.UnregisterEndpointNotificationCallback(_notificationClient); }
+            int hr = _enumerator.EnumAudioEndpoints(CoreAudio.EDataFlow.eCapture,
+                    CoreAudio.ActiveDeviceState, out var collection);
+            if (hr != 0 || collection is null)
+            {
+                Debug.WriteLine($"MicLockTray active capture enumeration failed: 0x{hr:X8}");
+                RecordEnumerationFailure(true);
+                return Array.Empty<DeviceInfo>();
+            }
+            hr = collection.GetCount(out uint count);
+            if (hr != 0)
+            {
+                Debug.WriteLine($"MicLockTray capture count failed: 0x{hr:X8}");
+                RecordEnumerationFailure(true);
+                return Array.Empty<DeviceInfo>();
+            }
+            RecordEnumerationFailure(false);
+
+            for (uint i = 0; i < count; i++)
+            {
+                if (collection.Item(i, out var device) != 0 || device is null) continue;
+                string? id = CoreAudio.GetDeviceId(device);
+                if (string.IsNullOrEmpty(id)) continue;
+
+                int current = Settings.EffectiveTarget(id, defaults.Contains(id)) ?? Settings.TargetPercent;
+                try
+                {
+                    Guid guid = CoreAudio.EndpointVolumeGuid;
+                    if (device.Activate(ref guid, 0x1, IntPtr.Zero, out var instance) == 0 &&
+                        instance is CoreAudio.IAudioEndpointVolume endpoint &&
+                        endpoint.GetMasterVolumeLevelScalar(out float scalar) == 0)
+                        current = Math.Clamp((int)Math.Round(scalar * 100), 0, 100);
+                }
+                catch (Exception ex) { Debug.WriteLine($"MicLockTray paused device read failed: {ex}"); }
+
+                bool bound;
+                lock (_gate) bound = _enabled && !_disposed && _bindings.ContainsKey(id);
+                devices.Add(new DeviceInfo(id, CoreAudio.GetFriendlyName(device, id),
+                    current, defaults.Contains(id), bound));
+            }
+        }
         catch (Exception ex)
         {
-            Debug.WriteLine($"MicLockTray endpoint notification unregister failed: {ex}");
+            RecordEnumerationFailure(true);
+            Debug.WriteLine($"MicLockTray active device enumeration failed: {ex}");
         }
+
+        return devices.OrderByDescending(device => device.IsDefault)
+            .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
     public void ForceToTarget()
     {
-        CoreAudio.IAudioEndpointVolume[] endpoints;
-
+        (CoreAudio.IAudioEndpointVolume endpoint, string id, bool isDefault)[] targets;
         lock (_gate)
         {
-            if (_disposed || !_enabled) return;
-            endpoints = _bindings.Values.Select(binding => binding.Endpoint).ToArray();
+            if (!_enabled || _disposed) return;
+            targets = _bindings.Values.Select(binding =>
+                (binding.Endpoint, binding.Id, _defaultIds.Contains(binding.Id))).ToArray();
         }
 
-        float target = Math.Clamp(_getTargetScalar(), 0f, 1f);
-        foreach (var endpoint in endpoints)
+        foreach (var target in targets)
+        {
+            int? percent = Settings.EffectiveTarget(target.id, target.isDefault);
+            if (percent is not null)
+                SetEndpointVolume(target.endpoint, percent.Value / 100f);
+        }
+    }
+
+    private void HandleVolumeChanged(string id, float current)
+    {
+        CoreAudio.IAudioEndpointVolume? endpoint;
+        bool isDefault;
+        lock (_gate)
+        {
+            if (_disposed || !_enabled || !_bindings.TryGetValue(id, out var binding)) return;
+            endpoint = binding.Endpoint;
+            isDefault = _defaultIds.Contains(id);
+        }
+
+        int? percent = Settings.EffectiveTarget(id, isDefault);
+        if (percent is null) return;
+        float target = percent.Value / 100f;
+        if (Math.Abs(current - target) > 0.005f)
             SetEndpointVolume(endpoint, target);
     }
 
-    private void HandleVolumeChanged(CoreAudio.ERole role, float currentVolume)
-    {
-        float target = Math.Clamp(_getTargetScalar(), 0f, 1f);
-        if (Math.Abs(currentVolume - target) <= 0.005f) return;
-
-        CoreAudio.IAudioEndpointVolume? endpoint = null;
-        lock (_gate)
-        {
-            if (!_disposed && _enabled && _bindings.TryGetValue(role, out var binding))
-                endpoint = binding.Endpoint;
-        }
-
-        if (endpoint != null)
-            SetEndpointVolume(endpoint, target);
-    }
-
-    private void ScheduleRebind(CoreAudio.ERole role)
+    private void ScheduleRefresh()
     {
         lock (_gate)
         {
             if (_disposed || !_enabled) return;
+            if (_refreshTimer is null)
+                _refreshTimer = new ThreadingTimer(_ => RefreshNow(), null, RefreshDelayMs, Timeout.Infinite);
+            else
+                _refreshTimer.Change(RefreshDelayMs, Timeout.Infinite);
+        }
+    }
 
-            if (_rebindTimers.TryGetValue(role, out var timer))
+    private void RefreshNow()
+    {
+        // Device notifications may arrive concurrently or while the user pauses enforcement.
+        lock (_refreshGate)
+        {
+            long generation;
+            HashSet<string> knownIds;
+            lock (_gate)
             {
-                timer.Change(RebindDelayMs, Timeout.Infinite);
+                if (_disposed || !_enabled) return;
+                generation = _generation;
+                knownIds = _bindings.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var devices = new Dictionary<string, (CoreAudio.IMMDevice device, string name)>(
+                StringComparer.OrdinalIgnoreCase);
+            var defaults = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (_enumerator.EnumAudioEndpoints(CoreAudio.EDataFlow.eCapture,
+                        CoreAudio.ActiveDeviceState, out var collection) != 0 || collection is null)
+                    return;
+                if (collection.GetCount(out uint count) != 0) return;
+                for (uint i = 0; i < count; i++)
+                {
+                    if (collection.Item(i, out var device) != 0 || device is null) continue;
+                    string? id = CoreAudio.GetDeviceId(device);
+                    if (string.IsNullOrEmpty(id)) continue;
+                    devices[id] = (device, CoreAudio.GetFriendlyName(device, id));
+                }
+
+                foreach (var role in Roles)
+                {
+                    if (_enumerator.GetDefaultAudioEndpoint(CoreAudio.EDataFlow.eCapture,
+                            role, out var device) != 0 || device is null) continue;
+                    string? id = CoreAudio.GetDeviceId(device);
+                    if (id is not null) defaults.Add(id);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"MicLockTray capture enumeration failed: {ex}");
+                return; // Never discard existing bindings on an unsuccessful scan.
+            }
+
+            var additions = new Dictionary<string, Binding>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in devices)
+            {
+                if (knownIds.Contains(pair.Key)) continue;
+                var binding = CreateBinding(pair.Key, pair.Value.name, pair.Value.device);
+                if (binding is not null) additions[pair.Key] = binding;
+            }
+
+            Binding[] removed = Array.Empty<Binding>();
+            bool accepted;
+            lock (_gate)
+            {
+                accepted = !_disposed && _enabled && generation == _generation;
+                if (accepted)
+                {
+                    removed = _bindings.Where(pair => !devices.ContainsKey(pair.Key))
+                        .Select(pair => pair.Value).ToArray();
+                    foreach (var binding in removed) _bindings.Remove(binding.Id);
+                    foreach (var pair in additions) _bindings[pair.Key] = pair.Value;
+                    foreach (var pair in devices)
+                    {
+                        if (_bindings.TryGetValue(pair.Key, out var existing))
+                            existing.Name = pair.Value.name;
+                    }
+                    _defaultIds = defaults;
+                }
+            }
+
+            if (!accepted)
+            {
+                foreach (var binding in additions.Values) UnregisterBinding(binding);
                 return;
             }
-
-            _rebindTimers[role] = new ThreadingTimer(
-                _ => RebindNow(role),
-                null,
-                RebindDelayMs,
-                Timeout.Infinite
-            );
+            foreach (var binding in removed) UnregisterBinding(binding);
+            ForceToTarget();
         }
     }
 
-    private void RebindNow(CoreAudio.ERole role)
-    {
-        lock (_gate)
-        {
-            if (_disposed || !_enabled) return;
-        }
-
-        var replacement = CreateBinding(role);
-        if (replacement is null) return;
-
-        Binding? previous = null;
-        bool keepReplacement;
-
-        lock (_gate)
-        {
-            keepReplacement = !_disposed && _enabled;
-            if (keepReplacement)
-            {
-                _bindings.TryGetValue(role, out previous);
-                _bindings[role] = replacement;
-            }
-        }
-
-        if (!keepReplacement)
-        {
-            UnregisterBinding(replacement);
-            return;
-        }
-
-        if (previous != null)
-            UnregisterBinding(previous);
-
-        SetEndpointVolume(replacement.Endpoint, Math.Clamp(_getTargetScalar(), 0f, 1f));
-    }
-
-    private Binding? CreateBinding(CoreAudio.ERole role)
+    private Binding? CreateBinding(string id, string name, CoreAudio.IMMDevice device)
     {
         try
         {
-            int result = _enumerator.GetDefaultAudioEndpoint(
-                CoreAudio.EDataFlow.eCapture,
-                role,
-                out var device
-            );
-            if (result != 0 || device is null) return null;
+            Guid guid = CoreAudio.EndpointVolumeGuid;
+            if (device.Activate(ref guid, 0x1, IntPtr.Zero, out var instance) != 0 ||
+                instance is not CoreAudio.IAudioEndpointVolume endpoint)
+                return null;
 
-            Guid endpointVolumeInterface = new("5CDF2C82-841E-4546-9722-0CF74078229A");
-            result = device.Activate(
-                ref endpointVolumeInterface,
-                0x1, // CLSCTX_INPROC_SERVER
-                IntPtr.Zero,
-                out var instance
-            );
-            if (result != 0 || instance is null) return null;
-
-            var endpoint = (CoreAudio.IAudioEndpointVolume)instance;
-            var callback = new VolumeCallback(this, role, _eventContext);
-            result = endpoint.RegisterControlChangeNotify(callback);
-            if (result != 0) return null;
-
-            return new Binding { Endpoint = endpoint, Callback = callback };
+            var callback = new VolumeCallback(this, id, _eventContext);
+            if (endpoint.RegisterControlChangeNotify(callback) != 0) return null;
+            return new Binding { Id = id, Name = name, Endpoint = endpoint, Callback = callback };
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"MicLockTray failed to bind {role} capture endpoint: {ex}");
+            Debug.WriteLine($"MicLockTray failed to bind capture endpoint: {ex}");
             return null;
         }
     }
 
     private void SetEndpointVolume(CoreAudio.IAudioEndpointVolume endpoint, float target)
     {
-        try { _ = endpoint.SetMasterVolumeLevelScalar(target, _eventContext); }
-        catch (Exception ex)
+        try
         {
-            Debug.WriteLine($"MicLockTray failed to enforce microphone volume: {ex}");
+            if (endpoint.GetMasterVolumeLevelScalar(out float current) == 0 &&
+                Math.Abs(current - target) <= 0.005f) return;
+            Guid eventContext = _eventContext;
+            int hr = endpoint.SetMasterVolumeLevelScalar(target, ref eventContext);
+            if (hr != 0) Debug.WriteLine($"MicLockTray endpoint volume write failed: 0x{hr:X8}");
         }
+        catch (Exception ex) { Debug.WriteLine($"MicLockTray endpoint volume write failed: {ex}"); }
     }
 
     private static void UnregisterBinding(Binding binding)
     {
         try { _ = binding.Endpoint.UnregisterControlChangeNotify(binding.Callback); }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"MicLockTray volume callback unregister failed: {ex}");
-        }
+        catch (Exception ex) { Debug.WriteLine($"MicLockTray callback unregister failed: {ex}"); }
     }
 
     public void Dispose()
@@ -328,7 +432,6 @@ internal sealed class MicEnforcer : IDisposable
             if (_disposed) return;
             _disposed = true;
         }
-
         Disable();
     }
 }
