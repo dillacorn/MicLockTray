@@ -85,7 +85,9 @@ internal sealed class InlineVolumeEditor : UserControl
             ForeColor = editorForeground,
             BackColor = editorBackground,
             Anchor = AnchorStyles.Left | AnchorStyles.Right,
-            Margin = Padding.Empty
+            // The native borderless EDIT text sits slightly above centered
+            // WinForms button glyphs; offset its row placement by ~1–2 pixels.
+            Margin = new Padding(0, 3, 0, 0)
         };
         _input.KeyPress += (_, e) =>
         {
