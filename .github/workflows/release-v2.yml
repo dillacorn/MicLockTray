@@ -1,6 +1,6 @@
-name: Add SmartScreen notice to existing v2.0 release
+name: Refine existing v2.0 SmartScreen guidance
 
-# One-time release-notes edit. No source code, tag, assets or main writes.
+# Update only release ID 423797436's description. No source, tags, assets, or main changes.
 on:
   push:
     branches:
@@ -20,7 +20,7 @@ jobs:
     if: github.repository == 'dillacorn/MicLockTray'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify release and append Windows SmartScreen instructions
+      - name: Replace SmartScreen note with brief instructions
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -34,68 +34,61 @@ jobs:
           commit = "564ecbfc98bbae41a47c48d91e6f4517992e7d35"
           exe_digest = "sha256:ad21875800cb5a8081f9b810b2b54adffce08b66d1eba0fe8d15d8a81544cf9c"
           checksum_digest = "sha256:7d401fd98355c1eb46769c5e0e468cbadfe00e4251aafc6ebb371c6ab276983a"
-          existing = """MicLockTray v2.0 adds independent microphone locks and a simpler way to manage them directly from the Windows tray.
 
-          ### What is new
-          - Lock multiple microphones at different input volumes, with settings remembered after unplugging or restarting.
-          - Adjust volume directly in each microphone menu and open its Windows sound properties.
-          - Redesigned context menu with Windows light/dark theme support and an optional notification toggle.
-          - Improved startup guidance, menu reliability, and auto-hide taskbar compatibility.
-
-          ### Download
-          Windows x64: Download MicLockTray.exe below. Exit the old app before replacing it; your saved settings are preserved."""
-          notice = """### Windows SmartScreen (if prompted)
+          old_notice = """### Windows SmartScreen (if prompted)
           MicLockTray is not code-signed, so Windows may show **“Windows protected your PC”** when you first open it. If you downloaded `MicLockTray.exe` from **this official GitHub release**, select **More info → Run anyway**. Leave SmartScreen enabled.
 
           This is for an *unrecognized app* warning only. If Microsoft Defender identifies a specific malware threat or quarantines the file, do not bypass that alert."""
+          new_notice = """---
+
+          ### Windows SmartScreen (if prompted)
+          Windows may display a SmartScreen prompt because MicLockTray isn't code-signed. If you downloaded `MicLockTray.exe` from **this official release**, select **More info → Run anyway** to open it."""
 
           def gh(*args, payload=None):
-              command = ["gh", "api", *args]
-              request = subprocess.run(
-                  command, input=payload, text=True,
-                  capture_output=True, check=False)
-              if request.returncode != 0:
-                  raise RuntimeError(f"GitHub request failed: {request.stderr[:1200]}")
-              return json.loads(request.stdout)
+              p = subprocess.run(["gh", "api", *args], input=payload, text=True,
+                                 capture_output=True, check=False)
+              if p.returncode:
+                  raise RuntimeError(f"GitHub API request failed: {p.stderr[:1200]}")
+              return json.loads(p.stdout)
 
-          branch = gh(f"repos/{repo}/branches/main")
-          if branch["commit"]["sha"] != commit:
-              raise RuntimeError("main has moved; abort release-notes update")
+          main = gh(f"repos/{repo}/branches/main")
+          if main["commit"]["sha"] != commit:
+              raise RuntimeError("Main moved; refuse to change release")
           tag = gh(f"repos/{repo}/git/ref/tags/v2.0")
           if tag["object"]["sha"] != commit or tag["object"]["type"] != "commit":
-              raise RuntimeError("v2.0 tag mismatch")
+              raise RuntimeError("Unexpected tag target")
           release = gh(f"repos/{repo}/releases/{release_id}")
-          if any((
-              release["id"] != release_id,
-              release["tag_name"] != "v2.0",
-              release["name"] != "MicLockTray v2.0",
-              release["draft"],
-              release["prerelease"],
-              release["target_commitish"] != commit,
-          )):
-              raise RuntimeError("Unexpected v2.0 release state")
+          if any((release["id"] != release_id, release["tag_name"] != "v2.0",
+                  release["name"] != "MicLockTray v2.0", release["draft"],
+                  release["prerelease"], release["target_commitish"] != commit)):
+              raise RuntimeError("Unexpected release identity or state")
           assets = release["assets"]
-          if len(assets) != 2 or sorted((a["name"], a["digest"], a["size"]) for a in assets) != sorted([
+          expected = sorted([
               ("MicLockTray.exe", exe_digest, 153946923),
-              ("MicLockTray.exe.sha256", checksum_digest, 83),
-          ]):
-              raise RuntimeError("Release assets drifted; stop")
-          previous = release["body"]
-          if previous.replace("\r\n", "\n").rstrip() != existing:
-              raise RuntimeError("Release notes have changed; stop instead of overwriting")
-          newline = "\r\n" if "\r\n" in previous else "\n"
-          updated_body = previous.rstrip("\r\n") + newline * 2 + notice.replace("\n", newline) + newline
+              ("MicLockTray.exe.sha256", checksum_digest, 83)])
+          observed = sorted((a["name"], a["digest"], a["size"]) for a in assets)
+          if observed != expected:
+              raise RuntimeError("Release assets do not match verified binaries")
 
-          result = gh("-X", "PATCH", f"repos/{repo}/releases/{release_id}",
-                      "--input", "-", payload=json.dumps({"body": updated_body}))
-          if result["id"] != release_id or result["body"] != updated_body:
-              raise RuntimeError("Release note edit not confirmed")
-          observed = gh(f"repos/{repo}/releases/{release_id}")
-          if observed["body"] != updated_body:
-              raise RuntimeError("Read-back mismatch after edit")
-          if len(observed["assets"]) != 2 or sorted((a["id"], a["digest"]) for a in observed["assets"]) != sorted(
-              (a["id"], a["digest"]) for a in assets):
-              raise RuntimeError("Asset state changed unexpectedly")
-          print("PASS: Updated SmartScreen note on existing v2.0 release ID only.")
-          print("PASS: Read-back text, assets, tag and release state verified.")
+          body = release["body"]
+          normalized = body.replace("\r\n", "\n").rstrip("\n")
+          if not normalized.endswith("\n\n" + old_notice):
+              raise RuntimeError("Release description changed; refuse to overwrite")
+          updated = normalized[:-(len(old_notice))] + new_notice + "\n"
+          newline = "\r\n" if "\r\n" in body else "\n"
+          updated = updated.replace("\n", newline)
+          response = gh("-X", "PATCH", f"repos/{repo}/releases/{release_id}",
+                        "--input", "-", payload=json.dumps({"body": updated}))
+          if response["id"] != release_id or response["body"] != updated:
+              raise RuntimeError("Updated body not confirmed")
+          after = gh(f"repos/{repo}/releases/{release_id}")
+          if after["body"] != updated:
+              raise RuntimeError("Readback body mismatch")
+          if sorted((a["id"], a["digest"], a["size"]) for a in after["assets"]) != sorted(
+                (a["id"], a["digest"], a["size"]) for a in assets):
+              raise RuntimeError("Assets changed unexpectedly")
+          if after["draft"] or after["tag_name"] != "v2.0":
+              raise RuntimeError("Release state changed unexpectedly")
+          print("PASS: SmartScreen text updated with section separator.")
+          print("PASS: Release ID, tag, unchanged assets and main revision verified.")
           PY
