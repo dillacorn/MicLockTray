@@ -138,6 +138,8 @@ internal static class Program
                     "inline editor follows light menu theme");
                 Equal(36, light.Value, "light editor preserves initial target");
                 Equal(27, light.Height, "volume editor uses compact row height");
+                Equal(3, light.Input.Margin.Top,
+                    "editable percentage is lowered to align with step buttons");
                 Equal(System.Windows.Forms.BorderStyle.None, light.Input.BorderStyle,
                     "flat editor removes native spinner chrome");
                 Equal(3, light.Input.MaxLength, "editor only accepts three-digit percentages");
