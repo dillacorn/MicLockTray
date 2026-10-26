@@ -59,6 +59,11 @@ internal sealed class PersistentLockMenuItem : ToolStripControlHost
         }
     }
 
+    // ToolStripControlHost forwards child clicks to ToolStripItem.OnClick by default.
+    // Suppress that path, which otherwise raises ItemClicked and closes the popup.
+    // The hosted Button's own Click still dispatches LockClicked.
+    protected override void OnClick(EventArgs e) { }
+
     // This event originates from the child Button, not a ToolStrip menu item.
     internal event EventHandler? LockClicked;
 
