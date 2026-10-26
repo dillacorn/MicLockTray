@@ -185,7 +185,7 @@ internal sealed class TrayApp : ApplicationContext
             var lockAction = new PersistentLockMenuItem(
                 $"{LockMark(!locked)} {(locked ? text.UnlockMicrophone : text.LockMicrophone)}",
                 _menuDark);
-            lockAction.Click += (_, _) =>
+            lockAction.LockClicked += (_, _) =>
             {
                 bool next = !Settings.EffectiveTarget(device.Id, device.IsDefault).HasValue;
                 int initialTarget = Settings.GetDevice(device.Id)?.TargetPercent ??
@@ -243,7 +243,7 @@ internal sealed class TrayApp : ApplicationContext
                 var lockAction = new PersistentLockMenuItem(
                     $"{LockMark(!device.Locked)} {(device.Locked ? text.UnlockMicrophone : text.LockMicrophone)}",
                     _menuDark);
-                lockAction.Click += (_, _) =>
+                lockAction.LockClicked += (_, _) =>
                 {
                     bool next = Settings.GetDevice(device.Id)?.Locked != true;
                     Settings.SetDeviceLock(device.Id, device.Name, next, device.TargetPercent);
