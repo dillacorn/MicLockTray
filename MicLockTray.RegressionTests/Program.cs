@@ -118,7 +118,7 @@ internal static class Program
             // Exercise the embedded WinForms editor without displaying a tray icon.
             int changes = 0;
             int latest = 0;
-            using (var dark = new InlineVolumeEditor(75, true, "Volume (1–100):",
+            using (var dark = new InlineVolumeEditor(75, true, "Volume",
                        value => { changes++; latest = value; }))
             {
                 Equal(75, dark.Value, "inline editor begins at current target");
@@ -131,17 +131,33 @@ internal static class Program
                 Equal(83, dark.Value, "edited target is displayed in same submenu");
             }
 
-            using (var light = new InlineVolumeEditor(36, false, "Volume (1–100):",
+            using (var light = new InlineVolumeEditor(36, false, "Volume",
                        _ => { }))
             {
                 Equal(System.Drawing.Color.FromArgb(211, 216, 222), light.BackColor,
                     "inline editor follows light menu theme");
                 Equal(36, light.Value, "light editor preserves initial target");
                 Equal(27, light.Height, "volume editor uses compact row height");
-                Equal(System.Windows.Forms.BorderStyle.FixedSingle, light.Input.BorderStyle,
-                    "numeric editor has only its own input border");
-                Equal(100m, light.Input.Maximum, "numeric editor allows 100 percent");
-                Equal(1m, light.Input.Minimum, "numeric editor limits values to 1 percent");
+                Equal(System.Windows.Forms.BorderStyle.None, light.Input.BorderStyle,
+                    "flat editor removes native spinner chrome");
+                Equal(3, light.Input.MaxLength, "editor only accepts three-digit percentages");
+                Equal("36", light.Input.Text, "inline text matches current target");
+                light.Step(1);
+                Equal(37, light.Value, "plus step increases target by one");
+                light.Step(-1);
+                Equal(36, light.Value, "minus step decreases target by one");
+                light.Input.Text = "85";
+                light.CommitText();
+                Equal(85, light.Value, "typed percentage commits within the menu");
+                light.Input.Text = "999";
+                light.CommitText();
+                Equal(100, light.Value, "typed percentage clamps at 100");
+                light.Input.Text = "invalid";
+                light.CommitText();
+                Equal("100", light.Input.Text, "invalid input restores saved target");
+                light.SetValue(1);
+                light.Step(-1);
+                Equal(1, light.Value, "minus button never falls below 1");
             }
 
             // The tray may sit on the bottom edge of an auto-hidden taskbar.
@@ -194,24 +210,20 @@ internal static class Program
                 Equal(2, toggles, "successive lock clicks are accepted in one menu session");
             }
 
-            Equal(true, PersistentLockMenuItem.KeepFlyoutOpen(
-                System.Windows.Forms.ToolStripDropDownCloseReason.AppFocusChange, true),
-                "pointer/focus loss does not dismiss a visible microphone flyout");
-            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
-                System.Windows.Forms.ToolStripDropDownCloseReason.AppClicked, true),
-                "application click may dismiss the microphone flyout");
-            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
-                System.Windows.Forms.ToolStripDropDownCloseReason.ItemClicked, true),
-                "regular menu item click may dismiss the flyout");
-            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
-                System.Windows.Forms.ToolStripDropDownCloseReason.Keyboard, true),
-                "keyboard dismissal remains available");
-            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
-                System.Windows.Forms.ToolStripDropDownCloseReason.CloseCalled, true),
-                "explicit root close dismisses the flyout");
-            Equal(false, PersistentLockMenuItem.KeepFlyoutOpen(
-                System.Windows.Forms.ToolStripDropDownCloseReason.AppFocusChange, false),
-                "a closed parent never preserves detached submenus");
+            // Native WinForms dismissal must remain enabled on both the root and
+            // microphone submenus. Regression from setting AutoClose=false.
+            using (var root = new System.Windows.Forms.ContextMenuStrip())
+            using (var microphone = new System.Windows.Forms.ToolStripMenuItem("Microphone"))
+            {
+                root.Items.Add(microphone);
+                microphone.DropDownItems.Add(new PersistentLockMenuItem
+                {
+                    Text = "Unlock microphone"
+                });
+                Equal(true, root.AutoClose, "root uses native outside-click dismissal");
+                Equal(true, microphone.DropDown.AutoClose,
+                    "microphone flyout uses native outside-click dismissal");
+            }
 
             Console.WriteLine($"PASS: {_assertions} settings, interop and UI regression assertions");
         }
