@@ -10,6 +10,4 @@ internal sealed class PersistentLockMenuItem : ToolStripMenuItem
 
     internal bool KeepsMenuOpen => !DismissWhenClicked;
 
-    internal static bool KeepFlyoutOpen(ToolStripDropDownCloseReason reason, bool rootVisible)
-        => rootVisible && reason == ToolStripDropDownCloseReason.AppFocusChange;
 }
